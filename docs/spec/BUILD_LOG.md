@@ -37,3 +37,24 @@ Phase 1A — Data Foundation (not started)
 | Date | What got built | Model/account used | Notes |
 |---|---|---|---|
 | | | | |
+
+
+
+## Phase 1A - Data Foundation ✅
+
+### Completed:
+- [x] Prisma schema created from spec
+- [x] Database migrations run
+- [x] Prisma Studio verified
+- [x] Auth + 2FA implemented (JWT, bcrypt, TOTP)
+- [x] Seed script written and run
+- [x] Manual login tested for all 5 roles
+  - admin@test.com ✅
+  - clerk@test.com ✅
+  - screener@test.com ✅
+  - supervisor@test.com ✅
+  - researcher@test.com ✅
+- [x] All 5 roles can see dashboard
+
+### Date: [25/06/2026]
+### Next: Move to Step 2

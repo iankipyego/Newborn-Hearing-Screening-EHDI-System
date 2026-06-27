@@ -1,0 +1,781 @@
+// =============================================================================
+// schema.prisma — Mama Rachel EHDI Clinical System
+// PostgreSQL 15+  |  Prisma 5+
+//
+// Column-level encryption note (§12.4, §23):
+//   Fields marked /// @encrypted are NOT stored as plaintext.
+//   Encryption/decryption is performed in the application layer using the
+//   ENCRYPTION_KEY environment variable (AES-256-GCM, 32-byte hex key).
+//   The column type remains String so Prisma handles transport; the actual
+//   value at rest is a base64-encoded ciphertext envelope.
+//   Affected fields: patients.mother_name, patients.mother_phone,
+//   patients.guardian_phone_alt, patients.whatsapp_number, patients.email,
+//   users.totp_secret.
+//
+// Audit log note (§4.12):
+//   The audit_log table is append-only. REVOKE UPDATE, DELETE ON audit_log
+//   FROM app_user; is enforced via a migration-managed SQL grant block.
+//   Application code must never call prisma.auditLog.update() or .delete().
+//
+// Soft-delete policy (§4.12):
+//   Hard deletes are prohibited. Use status flags or boolean `active` fields.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum Sex {
+  Male
+  Female
+}
+
+enum DeliveryType {
+  NVD
+  C_Section
+  Assisted_Vacuum_Forceps
+}
+
+enum EntrySource {
+  LIVE
+  PAPER_BACKUP
+}
+
+enum ConsentStatus {
+  GIVEN
+  REFUSED
+  PENDING
+}
+
+enum Ear {
+  LEFT
+  RIGHT
+}
+
+enum ScreeningStage {
+  SCREEN_1
+  SCREEN_2
+  RESCREEN_POST_REFERRAL
+}
+
+enum ScreeningModality {
+  OAE
+  AABR
+}
+
+enum ProbeFitQuality {
+  Good
+  Fair
+  Poor
+}
+
+enum AmbientNoiseLevel {
+  Low
+  Medium
+  High
+}
+
+enum ScreeningResult {
+  PASS
+  NOT_PASS
+  INCOMPLETE
+}
+
+enum ReferralType {
+  HEALTH_CARE_PROVIDER
+  AUDIOLOGIST
+}
+
+enum DiagnosisAtReferral {
+  Otitis_media
+  Blockage
+  Infection
+  Clear
+  Other
+}
+
+enum ReferralStatus {
+  PENDING
+  CLEARED
+  TREATED
+  NO_SHOW
+  SEEN
+}
+
+enum EvaluationType {
+  ABR
+  VRA
+  CPA
+  OAE
+}
+
+enum DiagnosticDiagnosis {
+  Normal
+  Conductive_loss
+  Sensorineural_loss
+  Mixed_loss
+  Auditory_neuropathy
+}
+
+enum HearingLossDegree {
+  Mild
+  Moderate
+  Severe
+  Profound
+}
+
+enum Laterality {
+  Unilateral
+  Bilateral
+}
+
+enum PathwayFinalStatus {
+  PASSED
+  IN_PROGRESS
+  REFERRED_AUDIOLOGY
+  DIAGNOSED
+  LOST_TO_FOLLOWUP
+}
+
+enum NotificationTriggerReason {
+  REFERRAL_SCHEDULED
+  RESCREEN_SCHEDULED
+  FOLLOW_UP_REMINDER
+  AUDIOLOGY_REFERRAL
+  LOST_TO_FOLLOWUP_WARNING
+}
+
+enum NotificationChannel {
+  SMS
+  WHATSAPP
+  EMAIL
+}
+
+enum NotificationLanguage {
+  en
+  sw
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum SurveyDeliveryChannelPreference {
+  IN_PERSON
+  SMS
+  WHATSAPP
+}
+
+enum SurveyStatus {
+  PENDING
+  COMPLETED
+  NO_RESPONSE
+}
+
+enum AuditAction {
+  INSERT
+  UPDATE
+  // DELETE is intentionally omitted — hard deletes are prohibited (§4.12)
+}
+
+enum UserRole {
+  DATA_CLERK
+  SCREENER
+  SUPERVISOR
+  RESEARCHER
+  ADMIN
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum QiReviewStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum AudiogramTestType {
+  AC // Air conduction
+  BC // Bone conduction
+}
+
+// ---------------------------------------------------------------------------
+// 4.13 / 20.1  users
+// ---------------------------------------------------------------------------
+
+model User {
+  id   String @id @default(uuid()) @db.Uuid
+  name  String
+  email String @unique
+  phone String?
+
+  /// bcrypt or argon2 hash — never store plaintext (§12.1)
+  password_hash String
+
+  role    UserRole
+  site_id String   @db.Uuid
+  active  Boolean  @default(true)
+
+  /// @encrypted — AES-256-GCM via ENCRYPTION_KEY env var (§12.4)
+  /// Null until the user completes 2FA setup
+  totp_secret  String?
+  totp_enabled Boolean @default(false)
+
+  failed_login_count     Int       @default(0)
+  locked_until           DateTime?
+  last_login_at          DateTime?
+
+  /// Hashed token (never store raw); null when no reset is pending
+  password_reset_token   String?
+  password_reset_expires DateTime?
+
+  created_by_id    String?   @db.Uuid
+  created_at       DateTime  @default(now())
+  deactivated_at   DateTime?
+  deactivated_by_id String?  @db.Uuid
+
+  // Relations
+  site             Site    @relation("UserSite", fields: [site_id], references: [id])
+  created_by       User?   @relation("UserCreatedBy", fields: [created_by_id], references: [id])
+  created_users    User[]  @relation("UserCreatedBy")
+  deactivated_by   User?   @relation("UserDeactivatedBy", fields: [deactivated_by_id], references: [id])
+  deactivated_users User[] @relation("UserDeactivatedBy")
+
+  // Authored records
+  consent_records_recorded     ConsentRecord[]          @relation("ConsentRecordedBy")
+  consent_records_withdrawn    ConsentRecord[]          @relation("ConsentWithdrawnBy")
+  screening_events             ScreeningEvent[]         @relation("ScreenerUser")
+  operational_logs             OperationalLog[]         @relation("OperationalLogRecordedBy")
+  audit_log_entries            AuditLog[]               @relation("AuditChangedBy")
+  correction_requests_made     CorrectionRequest[]      @relation("CorrectionRequestedBy")
+  correction_requests_reviewed CorrectionRequest[]      @relation("CorrectionReviewedBy")
+  qi_review_logs               QiReviewLog[]            @relation("QiReviewer")
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// 20.2  sites
+// ---------------------------------------------------------------------------
+
+model Site {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  county         String
+  subcounty      String?
+  contact_person String
+  contact_phone  String
+  created_at     DateTime @default(now())
+  active         Boolean  @default(true)
+
+  users            User[]           @relation("UserSite")
+  patients         Patient[]        @relation("PatientSite")
+  operational_logs OperationalLog[] @relation("OperationalLogSite")
+  qi_review_logs   QiReviewLog[]    @relation("QiReviewLogSite")
+
+  @@map("sites")
+}
+
+// ---------------------------------------------------------------------------
+// 4.1  patients
+// ---------------------------------------------------------------------------
+
+model Patient {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// System-generated, e.g. MRH-2026-00001. Used in ALL exports. (§4.1)
+  research_id     String  @unique
+  hospital_number String?
+
+  date_of_birth         DateTime
+  sex                   Sex
+  birth_weight_grams    Int
+  gestational_age_weeks Decimal  @db.Decimal(4, 2)
+  delivery_type         DeliveryType
+  apgar_score_5min      Int?
+
+  /// @encrypted — AES-256-GCM via ENCRYPTION_KEY env var (§12.4)
+  mother_name String
+
+  mother_age Int
+
+  /// @encrypted — AES-256-GCM via ENCRYPTION_KEY env var (§12.4)
+  mother_phone String
+
+  /// @encrypted — AES-256-GCM via ENCRYPTION_KEY env var (§12.4)
+  guardian_phone_alt String?
+
+  /// @encrypted — AES-256-GCM via ENCRYPTION_KEY env var (§12.4)
+  whatsapp_number String?
+
+  /// @encrypted — AES-256-GCM via ENCRYPTION_KEY env var (§12.4)
+  email String?
+
+  residence_county    String
+  residence_subcounty String
+  nearest_town        String
+
+  nicu_admitted Boolean
+  nicu_days     Int?
+
+  entry_source EntrySource
+
+  site_id    String   @db.Uuid
+  created_at DateTime @default(now())
+  created_by String   @db.Uuid
+
+  // Relations
+  site                  Site                 @relation("PatientSite", fields: [site_id], references: [id])
+  consent_record        ConsentRecord?
+  risk_factors          RiskFactor?
+  screening_events      ScreeningEvent[]
+  referrals             Referral[]
+  diagnostic_evaluations DiagnosticEvaluation[]
+  pathway_milestone     PathwayMilestone?
+  notifications_log     NotificationLog[]
+  parent_survey         ParentSurvey?
+
+  @@map("patients")
+}
+
+// ---------------------------------------------------------------------------
+// 4.2 + 20.6  consent_records
+// ---------------------------------------------------------------------------
+
+model ConsentRecord {
+  id         String        @id @default(uuid()) @db.Uuid
+  patient_id String        @unique @db.Uuid
+  status     ConsentStatus
+
+  /// Must match an approved IREC version (§4.2)
+  consent_form_version String
+  consented_at         DateTime
+
+  /// FK to users — who recorded it, not who gave it (§4.2)
+  consented_by_clerk_id String @db.Uuid
+
+  witness_name String?
+
+  // §20.6 withdrawal extension
+  withdrawn_at          DateTime?
+  withdrawn_by_clerk_id String?   @db.Uuid
+  withdrawal_reason     String?
+
+  patient          Patient @relation(fields: [patient_id], references: [id])
+  consented_by     User    @relation("ConsentRecordedBy", fields: [consented_by_clerk_id], references: [id])
+  withdrawn_by     User?   @relation("ConsentWithdrawnBy", fields: [withdrawn_by_clerk_id], references: [id])
+
+  @@map("consent_records")
+}
+
+// ---------------------------------------------------------------------------
+// 4.3  risk_factors
+// ---------------------------------------------------------------------------
+
+model RiskFactor {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @unique @db.Uuid
+
+  nicu_admission               Boolean
+  prematurity_under_37wk       Boolean // auto-derivable but stored explicitly for audit clarity (§4.3)
+  hyperbilirubinemia_treated   Boolean
+  ototoxic_drug_exposure       Boolean
+  craniofacial_anomaly         Boolean
+  family_history_hearing_loss  Boolean
+  birth_asphyxia               Boolean // auto-suggested from Apgar≤6, clerk confirms (§4.3)
+  congenital_infection_torch   Boolean
+  syndrome_associated_with_hl  Boolean
+  mechanical_ventilation_over_5d Boolean
+  bacterial_meningitis         Boolean
+
+  /// NOT used as a coded variable — plain descriptive text only (§4.3)
+  additional_notes String?
+
+  /// Stored for fast querying; recomputed whenever individual flags change (§4.3)
+  risk_factor_count Int
+
+  patient Patient @relation(fields: [patient_id], references: [id])
+
+  @@map("risk_factors")
+}
+
+// ---------------------------------------------------------------------------
+// 4.4  screening_events
+// ---------------------------------------------------------------------------
+
+model ScreeningEvent {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @db.Uuid
+
+  /// Independent per ear — never combine (§4.4)
+  ear   Ear
+  stage ScreeningStage
+
+  /// System-enforced per §2 NICU rule
+  modality ScreeningModality
+
+  equipment_id String
+
+  /// OAE-specific; null for AABR (§4.4)
+  probe_fit_quality ProbeFitQuality?
+
+  ambient_noise_level AmbientNoiseLevel
+  attempts            Int
+  screener_id         String            @db.Uuid
+
+  /// Per-screening duration for cost-effectiveness paper (§4.4)
+  /// Distinct from daily average in operational_logs
+  duration_minutes Decimal @db.Decimal(6, 2)
+
+  result           ScreeningResult
+  incomplete_reason String? // required if result = INCOMPLETE
+
+  /// Auto-timestamp from system clock — not manually typed (§4.4, §6)
+  tested_at   DateTime
+  recorded_at DateTime
+
+  patient  Patient @relation(fields: [patient_id], references: [id])
+  screener User    @relation("ScreenerUser", fields: [screener_id], references: [id])
+
+  @@map("screening_events")
+}
+
+// ---------------------------------------------------------------------------
+// 4.5  referrals
+// ---------------------------------------------------------------------------
+
+model Referral {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @db.Uuid
+
+  /// Independent per ear (§4.5)
+  ear  Ear
+  type ReferralType
+
+  /// Auto-filled from the triggering screening_event (§4.5)
+  reason String
+
+  /// Auto-timestamp (§4.5)
+  referred_at DateTime @default(now())
+
+  provider_name String
+  facility      String
+
+  /// HCP referrals only (§4.5)
+  diagnosis_at_referral DiagnosisAtReferral?
+
+  treatment_given       String?
+  medical_clearance_given Boolean?
+  pe_tube_placed        Boolean?
+  resolved_at           DateTime?
+  status                ReferralStatus
+
+  patient Patient @relation(fields: [patient_id], references: [id])
+
+  @@map("referrals")
+}
+
+// ---------------------------------------------------------------------------
+// 4.6  diagnostic_evaluations
+// ---------------------------------------------------------------------------
+
+model DiagnosticEvaluation {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @db.Uuid
+
+  /// Independent per ear (§4.6)
+  ear               Ear
+  audiologist_name  String
+  facility          String
+  evaluation_type   EvaluationType
+  evaluated_at      DateTime
+  diagnosis         DiagnosticDiagnosis
+  degree            HearingLossDegree?
+  laterality        Laterality
+
+  hearing_aid_recommended   Boolean
+  hearing_aid_fitted_date   DateTime? @db.Date
+  cochlear_implant_referral Boolean
+  early_intervention_enrolled Boolean
+  intervention_start_date   DateTime? @db.Date
+
+  patient              Patient               @relation(fields: [patient_id], references: [id])
+  diagnostic_thresholds DiagnosticThreshold[] @relation("EvaluationThresholds")
+
+  @@map("diagnostic_evaluations")
+}
+
+// ---------------------------------------------------------------------------
+// 20.5  diagnostic_thresholds (audiogram data)
+// ---------------------------------------------------------------------------
+
+model DiagnosticThreshold {
+  id                       String @id @default(uuid()) @db.Uuid
+  diagnostic_evaluation_id String @db.Uuid
+
+  /// Standard values: 250, 500, 1000, 2000, 4000, 8000 (§20.5)
+  frequency_hz Int
+
+  /// Hearing level in dB HL (§20.5)
+  threshold_db Int
+
+  /// Should match parent evaluation (§20.5)
+  ear Ear
+
+  /// Air conduction or bone conduction (§20.5)
+  test_type AudiogramTestType
+
+  diagnostic_evaluation DiagnosticEvaluation @relation("EvaluationThresholds", fields: [diagnostic_evaluation_id], references: [id])
+
+  @@map("diagnostic_thresholds")
+}
+
+// ---------------------------------------------------------------------------
+// 4.7  pathway_milestones (computed/cached — not manually entered)
+// ---------------------------------------------------------------------------
+
+model PathwayMilestone {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @unique @db.Uuid
+
+  days_birth_to_first_screen     Int
+  days_first_screen_to_screen2   Int?
+  days_screen2_to_referral       Int?
+  days_referral_to_clearance     Int?
+  days_clearance_to_rescreen     Int?
+  days_audiology_referral_to_eval Int?
+  days_diagnosis_to_intervention Int?
+
+  screened_within_1_month      Boolean
+  /// Only relevant if referred (§4.7)
+  diagnosed_within_3_months    Boolean
+  /// Only relevant if diagnosed with loss (§4.7)
+  intervention_within_6_months Boolean
+
+  final_status PathwayFinalStatus
+
+  /// Tracks when this cache row was last recomputed
+  computed_at DateTime @default(now())
+
+  patient Patient @relation(fields: [patient_id], references: [id])
+
+  @@map("pathway_milestones")
+}
+
+// ---------------------------------------------------------------------------
+// 4.8  notifications_log
+// ---------------------------------------------------------------------------
+
+model NotificationLog {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @db.Uuid
+
+  trigger_reason     NotificationTriggerReason
+  channel            NotificationChannel
+  language           NotificationLanguage
+  sent_at            DateTime
+  delivery_status    DeliveryStatus
+  provider_message_id String?
+
+  /// Literal sent text stored for audit (§4.8)
+  message_content String
+
+  patient Patient @relation(fields: [patient_id], references: [id])
+
+  @@map("notifications_log")
+}
+
+// ---------------------------------------------------------------------------
+// 4.9  operational_logs  (one row per day per site)
+// ---------------------------------------------------------------------------
+
+model OperationalLog {
+  id       String   @id @default(uuid()) @db.Uuid
+  log_date DateTime @db.Date
+  site_id  String   @db.Uuid
+
+  total_births   Int
+  total_screened Int
+  total_missed   Int
+
+  // Structured missed-reason breakdown — stored as separate columns, not free text (§4.9)
+  missed_discharged_early Int @default(0)
+  missed_refused          Int @default(0)
+  missed_equipment_down   Int @default(0)
+  missed_staff_absent     Int @default(0)
+
+  avg_screening_time_minutes Decimal @db.Decimal(6, 2)
+  equipment_downtime_minutes Int
+  power_outage_minutes       Int
+  probes_replaced            Int
+  consumable_cost            Decimal @db.Decimal(10, 2)
+  staff_on_duty_count        Int
+
+  recorded_by String @db.Uuid
+
+  site        Site @relation("OperationalLogSite", fields: [site_id], references: [id])
+  recorded_by_user User @relation("OperationalLogRecordedBy", fields: [recorded_by], references: [id])
+
+  @@unique([log_date, site_id])
+  @@map("operational_logs")
+}
+
+// ---------------------------------------------------------------------------
+// 4.10  parent_surveys
+// ---------------------------------------------------------------------------
+
+model ParentSurvey {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @unique @db.Uuid
+
+  delivery_channel_preference SurveyDeliveryChannelPreference
+  status                      SurveyStatus                    @default(PENDING)
+
+  /// Only relevant for SMS/WHATSAPP channels (§4.10.1)
+  attempts_sent   Int       @default(0)
+  last_attempt_at DateTime?
+
+  // Survey scores — null until completed
+  explanation_clarity_score Int?
+  anxiety_before_score      Int?
+  anxiety_after_score       Int?
+  satisfaction_score        Int?
+  would_recommend           Boolean?
+  understood_result         Boolean?
+  knowledge_q1_correct      Boolean?
+  knowledge_q2_correct      Boolean?
+
+  open_comments String?
+
+  patient Patient @relation(fields: [patient_id], references: [id])
+
+  @@map("parent_surveys")
+}
+
+// ---------------------------------------------------------------------------
+// 4.11  quality_snapshots (computed monthly/quarterly — not recalculated on the fly)
+// ---------------------------------------------------------------------------
+
+model QualitySnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  period_start DateTime @db.Date
+  period_end   DateTime @db.Date
+
+  /// births screened ÷ total births (§4.11)
+  coverage_rate              Decimal @db.Decimal(5, 4)
+  screened_by_1mo_rate       Decimal @db.Decimal(5, 4)
+  referral_rate              Decimal @db.Decimal(5, 4)
+  return_for_rescreen_rate   Decimal @db.Decimal(5, 4)
+  diagnosis_by_3mo_rate      Decimal @db.Decimal(5, 4)
+  intervention_by_6mo_rate   Decimal @db.Decimal(5, 4)
+  loss_to_followup_rate      Decimal @db.Decimal(5, 4)
+
+  computed_at DateTime @default(now())
+
+  @@unique([period_start, period_end])
+  @@map("quality_snapshots")
+}
+
+// ---------------------------------------------------------------------------
+// 4.12  audit_log  (append-only — REVOKE UPDATE, DELETE at DB level)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String @id @default(uuid()) @db.Uuid
+
+  table_name String
+  record_id  String
+
+  /// INSERT or UPDATE only — hard deletes are prohibited in this system (§4.12)
+  action AuditAction
+
+  changed_by String   @db.Uuid
+  changed_at DateTime @default(now())
+
+  /// State before the change; null for INSERT (§4.12)
+  before_value Json?
+
+  /// State after the change (§4.12)
+  after_value Json
+
+  changed_by_user User @relation("AuditChangedBy", fields: [changed_by], references: [id])
+
+  @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// 20.3  correction_requests
+// ---------------------------------------------------------------------------
+
+model CorrectionRequest {
+  id           String @id @default(uuid()) @db.Uuid
+  requested_by String @db.Uuid
+  requested_at DateTime @default(now())
+
+  table_name     String
+  record_id      String @db.Uuid
+
+  /// Mandatory explanation (§20.3)
+  reason         String
+
+  /// Corrected field(s) and their new values (§20.3)
+  proposed_value Json
+
+  status      CorrectionStatus @default(PENDING)
+  reviewed_by String?          @db.Uuid
+  reviewed_at DateTime?
+  reviewer_note String?
+
+  requester   User  @relation("CorrectionRequestedBy", fields: [requested_by], references: [id])
+  reviewer    User? @relation("CorrectionReviewedBy", fields: [reviewed_by], references: [id])
+
+  @@map("correction_requests")
+}
+
+// ---------------------------------------------------------------------------
+// 20.4  qi_review_log
+// ---------------------------------------------------------------------------
+
+model QiReviewLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  review_date DateTime @db.Date
+  reviewer_id String   @db.Uuid
+  site_id     String   @db.Uuid
+  created_at  DateTime @default(now())
+
+  /// Plain-language description of the issue (§20.4)
+  issue_identified String
+
+  root_cause   String?
+
+  /// Required — what was done about it (§20.4)
+  action_taken String
+
+  /// May be a person outside the system (§20.4)
+  responsible_person String
+
+  follow_up_date DateTime? @db.Date
+  status         QiReviewStatus
+  closed_at      DateTime?
+
+  reviewer User @relation("QiReviewer", fields: [reviewer_id], references: [id])
+  site     Site @relation("QiReviewLogSite", fields: [site_id], references: [id])
+
+  @@map("qi_review_log")
+}
