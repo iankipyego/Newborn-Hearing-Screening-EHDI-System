@@ -1,66 +1,58 @@
 'use client';
 
-import { UseFormRegister, FieldError } from 'react-hook-form';
-import { cn } from '@/lib/utils/cn';
+import { useFormContext } from 'react-hook-form';
+import { Check } from 'lucide-react';
 
 interface CheckboxProps {
-  name: string;
+  id: string;
   label: string;
-  register: UseFormRegister<any>;
-  error?: FieldError;
-  className?: string;
+  autoSuggested?: boolean;
+  autoSuggestedReason?: string;
   disabled?: boolean;
-  helperText?: string;
 }
 
-export function Checkbox({
-  name,
-  label,
-  register,
-  error,
-  className = '',
-  disabled = false,
-  helperText,
-}: CheckboxProps) {
-  const id = `field-${name}`;
+export default function Checkbox({ id, label, autoSuggested, autoSuggestedReason, disabled = false }: CheckboxProps) {
+  const { setValue, watch } = useFormContext();
+  const value = watch(id) || false;
+
+  const handleClick = () => {
+    if (disabled) return;
+    setValue(id, !value, { shouldValidate: true });
+  };
 
   return (
-    <div className={cn('space-y-1', className)}>
-      <div className="flex items-start gap-2.5">
-        <input
-          id={id}
-          type="checkbox"
-          disabled={disabled}
-          {...register(name)}
-          className={cn(
-            'mt-0.5 h-4 w-4 rounded border-gray-300',
-            'text-teal-600 focus:ring-teal-500',
-            'transition-colors duration-150',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
-            error && 'border-red-500'
-          )}
-        />
-        <label
-          htmlFor={id}
-          className={cn(
-            'text-sm text-gray-700 select-none',
-            disabled && 'opacity-50 cursor-not-allowed'
-          )}
-        >
-          {label}
-        </label>
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled}
+      className={`flex items-start gap-3 p-3 rounded-xl border transition-all duration-150 text-left
+        ${value
+          ? 'bg-accent/10 dark:bg-accent/10 border-accent/30 dark:border-accent/20'
+          : 'bg-white dark:bg-surface-card border-gray-200 dark:border-surface-border hover:border-gray-300 dark:hover:border-surface-hover'
+        }
+        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+      `}
+    >
+      <div
+        className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all duration-150
+          ${value
+            ? 'bg-accent border-accent'
+            : 'border-gray-300 dark:border-surface-border'
+          }`}
+      >
+        {value && <Check size={12} className="text-white" strokeWidth={3} />}
       </div>
-
-      {helperText && !error && (
-        <p className="text-sm text-gray-500 ml-6">{helperText}</p>
-      )}
-
-      {error && (
-        <p className="text-sm text-red-600 flex items-center gap-1 ml-6">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
-          {error.message}
-        </p>
-      )}
-    </div>
+      <div className="flex-1 min-w-0">
+        <span className={`text-sm font-medium leading-tight ${value ? 'text-accent-700 dark:text-accent-light' : 'text-gray-700 dark:text-fg'}`}>
+          {label}
+        </span>
+        {autoSuggested && !value && (
+          <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            Auto: {autoSuggestedReason}
+          </span>
+        )}
+      </div>
+    </button>
   );
 }

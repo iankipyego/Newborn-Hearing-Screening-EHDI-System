@@ -1,92 +1,52 @@
 'use client';
 
-import { UseFormRegister, FieldError } from 'react-hook-form';
-import { cn } from '@/lib/utils/cn';
+import { forwardRef } from 'react';
+import { useFormContext } from 'react-hook-form';
 
-interface InputProps {
-  name: string;
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
-  type?: 'text' | 'email' | 'number' | 'date' | 'datetime-local' | 'tel' | 'password' | 'textarea';
-  placeholder?: string;
+  hint?: string;
+  error?: string;
   required?: boolean;
-  register: UseFormRegister<any>;
-  error?: FieldError;
-  className?: string;
-  disabled?: boolean;
-  defaultValue?: any;
-  step?: string | number;
-  min?: number;
-  max?: number;
-  rows?: number;
-  helperText?: string;
 }
 
-export function Input({
-  name,
-  label,
-  type = 'text',
-  placeholder,
-  required = false,
-  register,
-  error,
-  className = '',
-  disabled = false,
-  defaultValue,
-  step,
-  min,
-  max,
-  rows = 3,
-  helperText,
-}: InputProps) {
-  const isTextarea = type === 'textarea';
-  const id = `field-${name}`;
+const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, hint, error, required, className = '', id, ...props }, ref) => {
+    const { register, formState: { errors } } = useFormContext();
+    const fieldError = id ? errors?.[id]?.message : error;
 
-  const commonProps = {
-    id,
-    placeholder,
-    disabled,
-    defaultValue,
-    ...register(name),
-    className: cn(
-      'w-full rounded-lg border border-gray-300',
-      'px-4 py-2.5 text-gray-900',
-      'transition-colors duration-150',
-      'focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20',
-      'disabled:bg-gray-100 disabled:cursor-not-allowed',
-      error && 'border-red-500 focus:border-red-500 focus:ring-red-500/20',
-      className
-    ),
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-medium text-gray-700">
-        {label}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-
-      {isTextarea ? (
-        <textarea rows={rows} {...commonProps} />
-      ) : (
+    return (
+      <div className="space-y-1.5">
+        {label && (
+          <label htmlFor={id} className="block text-sm font-medium text-gray-700 dark:text-fg">
+            {label}
+            {required && <span className="text-red-500 ml-0.5">*</span>}
+          </label>
+        )}
         <input
-          type={type}
-          step={step}
-          min={min}
-          max={max}
-          {...commonProps}
+          ref={ref}
+          id={id}
+          {...register(id)}
+          aria-invalid={fieldError ? 'true' : 'false'}
+          aria-describedby={fieldError ? `${id}-error` : undefined}
+          className={`w-full px-3.5 py-2.5 rounded-lg text-sm border bg-white dark:bg-surface-card
+            text-gray-900 dark:text-fg placeholder-gray-400 dark:placeholder-fg-muted
+            focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent
+            disabled:opacity-50 disabled:cursor-not-allowed
+            ${fieldError ? 'border-red-300 dark:border-red-800/60' : 'border-gray-300 dark:border-surface-border'}
+            ${className}`}
+          {...props}
         />
-      )}
+        {fieldError && (
+          <p id={`${id}-error`} className="text-xs text-red-600 dark:text-red-400">{fieldError}</p>
+        )}
+        {hint && !fieldError && (
+          <p className="text-xs text-gray-500 dark:text-fg-muted">{hint}</p>
+        )}
+      </div>
+    );
+  }
+);
 
-      {helperText && !error && (
-        <p className="text-sm text-gray-500">{helperText}</p>
-      )}
-
-      {error && (
-        <p className="text-sm text-red-600 flex items-center gap-1">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
-          {error.message}
-        </p>
-      )}
-    </div>
-  );
-}
+Input.displayName = 'Input';
+export default Input;

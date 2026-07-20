@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
+/* ── Tailwind v4: class-based dark mode (replaces v3's darkMode: 'class') ── */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Tailwind v4: theme tokens (replaces v3's theme.extend in config) ── */
+@theme {
+  --color-surface: #0B1120;
+  --color-surface-elevated: #111827;
+  --color-surface-card: #1A2332;
+  --color-surface-hover: #1F2A3C;
+  --color-surface-border: #2A3548;
+  --color-fg: #F1F5F9;
+  --color-fg-muted: #8896AB;
+  --color-accent: #0EA5A0;
+  --color-accent-light: #14B8B3;
+  --color-warn: #F59E0B;
+  --color-warn-light: #FBBF24;
+  --font-display: var(--font-geist-sans), sans-serif;
+  --font-body: var(--font-geist-sans), sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb { background: #2A3548; }
+
+/* ── Chart CSS variables (read by Recharts) ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --chart-grid: #f0f0f0;
+  --chart-axis: #9ca3af;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: #e5e7eb;
+  --chart-tooltip-text: #1f2937;
+  --chart-tooltip-sub: #6b7280;
+}
+.dark {
+  --chart-grid: #2A3548;
+  --chart-axis: #8896AB;
+  --chart-tooltip-bg: #1A2332;
+  --chart-tooltip-border: #2A3548;
+  --chart-tooltip-text: #F1F5F9;
+  --chart-tooltip-sub: #8896AB;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ── Dark mode atmosphere — gradient blobs ── */
+.dark .atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.dark .atmosphere::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  right: -20%;
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle, rgba(14,165,160,0.07) 0%, transparent 70%);
+  animation: drift1 20s ease-in-out infinite;
+}
+.dark .atmosphere::after {
+  content: '';
+  position: absolute;
+  bottom: -20%;
+  left: -10%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(245,158,11,0.04) 0%, transparent 70%);
+  animation: drift2 25s ease-in-out infinite;
+}
+@keyframes drift1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-60px, 40px) scale(1.1); }
+}
+@keyframes drift2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(40px, -30px) scale(1.15); }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ── Dark mode noise texture ── */
+.dark .noise {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ── Theme transition — applied only to layout shells, not every element ── */
+.theme-transition,
+.theme-transition *,
+aside,
+aside *,
+header,
+header * {
+  transition-property: background-color, border-color, color;
+  transition-duration: 200ms;
+  transition-timing-function: ease;
+}
+
+/* Exclude chart rendering from any transitions */
+.recharts-wrapper *,
+.recharts-surface * {
+  transition: none !important;
+}
+/* ── Card component (used by registration form sections) ── */
+.card-theme {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 24px;
+}
+.dark .card-theme {
+  background: #1A2332;
+  border-color: #2A3548;
 }

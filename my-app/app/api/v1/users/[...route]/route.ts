@@ -1,6 +1,6 @@
 // app/api/v1/users/[...route]/route.ts
 // Handles user management endpoints.
-// Currently implements:
+//   GET  /api/v1/users?role=SCREENER — screener dropdown
 //   PATCH /api/v1/users/:id/deactivate   — §25.1 instant token invalidation
 
 import { type NextRequest, NextResponse } from "next/server";
@@ -21,9 +21,6 @@ function json(data: unknown, status = 200) {
 // ---------------------------------------------------------------------------
 
 const DeactivateBodySchema = z.object({
-  // Optional: pass the target user's current access token JTI + expiry
-  // for instant blocklisting. Without it, the active=false DB check still
-  // catches the user within the next request.
   current_access_jti:        z.string().optional(),
   current_access_expires_at: z.string().datetime().optional(),
 }).optional();
@@ -50,16 +47,13 @@ async function handleDeactivate(
   if (!target)        return json({ error: "User not found" }, 404);
   if (!target.active) return json({ error: "Account already deactivated" }, 409);
 
-  // 1. Mark deactivated in DB
   await prisma.user.update({
     where: { id: targetId },
     data:  { active: false, deactivated_at: new Date(), deactivated_by_id: adminUser.id },
   });
 
-  // 2. Delete ALL refresh tokens from Redis (§25.1)
   await deleteAllRefreshTokens(targetId);
 
-  // 3. Blocklist current access token JTI if caller provided it (§25.1)
   let body: unknown;
   try { body = await request.json(); } catch { body = {}; }
   const parsed = DeactivateBodySchema.safeParse(body);
@@ -70,7 +64,6 @@ async function handleDeactivate(
     ).catch(() => {});
   }
 
-  // 4. Audit log
   await prisma.auditLog.create({
     data: {
       table_name:   "users",
@@ -86,24 +79,42 @@ async function handleDeactivate(
 }
 
 // ---------------------------------------------------------------------------
-// Dispatcher
+// GET /api/v1/users?role=SCREENER — screener list for dropdown
 // ---------------------------------------------------------------------------
+export async function GET(request: NextRequest, { params }: { params: Params }): Promise<NextResponse> {
+  let user;
+  try { user = await requireAuth(request, [UserRole.ADMIN]); }
+  catch (err) { return authErrResponse(err); }
 
+  const { searchParams } = new URL(request.url);
+  const role = searchParams.get("role");
+
+  if (role) {
+    const users = await prisma.user.findMany({
+      where: {
+        role: role as UserRole,
+        active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+      },
+      orderBy: { name: "asc" },
+    });
+    return json({ users });
+  }
+
+  return json({ message: "Users listing — implement here", requestedBy: user.id });
+}
+
+// ---------------------------------------------------------------------------
+// PATCH dispatcher
+// ---------------------------------------------------------------------------
 export async function PATCH(request: NextRequest, { params }: { params: Params }): Promise<NextResponse> {
   const [id, action] = params.route;
 
   if (id && action === "deactivate") return handleDeactivate(request, id);
 
   return json({ error: "Not found" }, 404);
-}
-
-export async function GET(request: NextRequest, { params }: { params: Params }): Promise<NextResponse> {
-  // GET /api/v1/users  — list (Admin only)
-  // GET /api/v1/users/:id — get one
-  // Implement as needed; skeleton shown
-  let user;
-  try { user = await requireAuth(request, [UserRole.ADMIN]); }
-  catch (err) { return authErrResponse(err); }
-
-  return json({ message: "Users endpoint — implement listing here", requestedBy: user.id });
 }

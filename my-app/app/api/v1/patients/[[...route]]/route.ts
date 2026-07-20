@@ -19,16 +19,30 @@ import {
 } from "@/lib/validation/schemas";
 import { fuzzyMatch, exactMatch, type PatientSearchRecord } from "@/lib/search/fuzzyMatch";
 
+// FIX: Next.js 15+ (and 16.2, which you're on) makes route handler `params`
+// a Promise, not a plain object. The original code did:
+//   { params }: { params: { route: string[] } }
+//   const route = params.route ?? [];
+// Since `params` is actually a Promise, `params.route` is always undefined
+// (a Promise has no `.route` property) — this silently fell through to
+// `route = []` instead of throwing, which looked like "nothing happens"
+// rather than a clear error. All three handlers below now type params as
+// a Promise and `await` it before use.
+// FIX: folder must be [[...route]] (optional catch-all) not [...route]
+// (required catch-all), since POST /api/v1/patients with no trailing
+// segments needs to match too -- a required catch-all only matches when
+// at least one extra segment is present, causing a 404 on plain
+// POST /api/v1/patients. `route` can now legitimately be undefined.
+type RouteParams = { params: Promise<{ route?: string[] }> };
+
 // ---------------------------------------------------------------------------
 // POST /api/v1/patients — Register new child
 // Roles: DATA_CLERK, ADMIN
 // ---------------------------------------------------------------------------
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { route: string[] } }
-) {
+export async function POST(request: NextRequest, { params }: RouteParams) {
   // Handle sub-routes (e.g. /patients/:id/void)
-  const route = params.route ?? [];
+  const { route: routeParam } = await params;
+  const route = routeParam ?? [];
   if (route.length === 2 && route[1] === "void") {
     return handleVoid(request, route[0]);
   }
@@ -80,6 +94,7 @@ export async function POST(
           hospital_number: d.hospital_number ?? null,
           date_of_birth: new Date(d.date_of_birth),
           sex: d.sex,
+          child_name: encryptNullable(d.child_name),              // NEW: encrypted direct identifier
           birth_weight_grams: d.birth_weight_grams,
           gestational_age_weeks: d.gestational_age_weeks,
           delivery_type: d.delivery_type,
@@ -95,6 +110,7 @@ export async function POST(
           nearest_town: d.nearest_town,
           nicu_admitted: d.nicu_admitted,
           nicu_days: d.nicu_days ?? null,
+          screened_at_birth: d.screened_at_birth ?? null,          // NEW: birth screening history
           entry_source: d.entry_source,
           site_id: user.site_id,
           created_by: user.id,
@@ -180,13 +196,11 @@ export async function POST(
 // GET /api/v1/patients/:id — single patient
 // Roles: DATA_CLERK, SCREENER, SUPERVISOR, ADMIN
 // ---------------------------------------------------------------------------
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { route: string[] } }
-) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await requireAuth(request, ["DATA_CLERK", "SCREENER", "SUPERVISOR", "ADMIN"]);
-    const route = params.route ?? [];
+    const { route: routeParam } = await params;
+    const route = routeParam ?? [];
 
     // Single patient GET /api/v1/patients/:id
     if (route.length === 1 && route[0] !== "undefined") {
@@ -237,6 +251,7 @@ export async function GET(
       id: p.id,
       research_id: p.research_id,
       hospital_number: p.hospital_number,
+      child_name: decryptNullable(p.child_name),          // NEW: decrypted for display + search
       mother_name: decrypt(p.mother_name),
       mother_phone: decrypt(p.mother_phone),
       date_of_birth: p.date_of_birth.toISOString(),
@@ -274,13 +289,11 @@ export async function GET(
 // ---------------------------------------------------------------------------
 // PATCH /api/v1/patients/:id — partial update
 // ---------------------------------------------------------------------------
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { route: string[] } }
-) {
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await requireAuth(request, ["DATA_CLERK", "SUPERVISOR", "ADMIN"]);
-    const id = params.route?.[0];
+    const { route } = await params;
+    const id = route?.[0];
     if (!id) return NextResponse.json({ error: "Patient ID required" }, { status: 400 });
 
     const patient = await prisma.patient.findUnique({ where: { id } });
@@ -302,6 +315,7 @@ export async function PATCH(
 
     // Re-encrypt any PII fields being updated
     const updateData: Record<string, unknown> = {};
+    if (body.child_name !== undefined) updateData.child_name = encryptNullable(body.child_name);  // NEW
     if (body.mother_name) updateData.mother_name = encrypt(body.mother_name);
     if (body.mother_phone) updateData.mother_phone = encrypt(body.mother_phone);
     if (body.guardian_phone_alt !== undefined) updateData.guardian_phone_alt = encryptNullable(body.guardian_phone_alt);
@@ -311,6 +325,7 @@ export async function PATCH(
     const plainFields = [
       "hospital_number", "mother_age", "residence_county",
       "residence_subcounty", "nearest_town", "nicu_admitted", "nicu_days",
+      "screened_at_birth",                                                                                   // NEW
     ];
     for (const f of plainFields) {
       if (body[f] !== undefined) updateData[f] = body[f];
@@ -365,6 +380,7 @@ async function getSinglePatient(id: string, user: { id: string; role: string; si
   // Decrypt PII
   const decrypted = {
     ...patient,
+    child_name: decryptNullable(patient.child_name),            // NEW
     mother_name: decrypt(patient.mother_name),
     mother_phone: decrypt(patient.mother_phone),
     guardian_phone_alt: decryptNullable(patient.guardian_phone_alt),

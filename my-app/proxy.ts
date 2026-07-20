@@ -1,4 +1,4 @@
-// middleware.ts  (project root)
+// proxy.ts  (project root)
 //
 // Guards all pages in the (app) route group.
 // Reads the access_token from a cookie (set by the 2FA page after login).
@@ -37,7 +37,7 @@ function isAuthPage(pathname: string): boolean {
   return AUTH_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-export async function middleware(request: NextRequest): Promise<NextResponse> {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   // Read token from cookie (set by 2FA page) or Authorization header (SSR fetches)

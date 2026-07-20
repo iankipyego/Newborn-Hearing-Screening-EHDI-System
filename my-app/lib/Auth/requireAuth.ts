@@ -40,12 +40,18 @@ export async function requireAuth(
   request: NextRequest,
   allowedRoles?: UserRole[]
 ): Promise<AuthUser> {
-  // 1. Extract Bearer token
+
+    // 1. Extract Bearer token — header first, cookie fallback
   const header = request.headers.get("authorization") ?? "";
-  if (!header.startsWith("Bearer ")) {
+  let token: string;
+  if (header.startsWith("Bearer ")) {
+    token = header.slice(7);
+  } else {
+    token = request.cookies.get("access_token")?.value ?? "";
+  }
+  if (!token) {
     throw new AuthError(401, "Missing or malformed Authorization header");
   }
-  const token = header.slice(7);
 
   // 2. Verify signature + expiry
   let payload: AccessTokenPayload;

@@ -8,9 +8,9 @@
 //   ENCRYPTION_KEY environment variable (AES-256-GCM, 32-byte hex key).
 //   The column type remains String so Prisma handles transport; the actual
 //   value at rest is a base64-encoded ciphertext envelope.
-//   Affected fields: patients.mother_name, patients.mother_phone,
-//   patients.guardian_phone_alt, patients.whatsapp_number, patients.email,
-//   users.totp_secret.
+//   Affected fields: patients.child_name, patients.mother_name,
+//   patients.mother_phone, patients.guardian_phone_alt,
+//   patients.whatsapp_number, patients.email, users.totp_secret.
 //
 // Audit log note (§4.12):
 //   The audit_log table is append-only. REVOKE UPDATE, DELETE ON audit_log
@@ -215,6 +215,24 @@ enum AudiogramTestType {
   BC // Bone conduction
 }
 
+enum Modality {
+  OAE
+  AABR
+}
+
+enum PatientFinalStatus {
+  PASSED
+  IN_PROGRESS
+  REFERRED_AUDIOLOGY
+  DIAGNOSED
+  LOST_TO_FOLLOWUP
+}
+
+enum RecordStatus {
+  ACTIVE
+  VOIDED
+}
+
 // ---------------------------------------------------------------------------
 // 4.13 / 20.1  users
 // ---------------------------------------------------------------------------
@@ -267,6 +285,11 @@ model User {
   correction_requests_reviewed CorrectionRequest[]      @relation("CorrectionReviewedBy")
   qi_review_logs               QiReviewLog[]            @relation("QiReviewer")
 
+  // Additional relations for created records
+  screening_created            ScreeningEvent[]         @relation("ScreeningCreator")
+  referrals_created            Referral[]               @relation("ReferralCreator")
+  correction_requests_resolved CorrectionRequest[]      @relation("CorrectionResolver")
+
   @@map("users")
 }
 
@@ -305,6 +328,14 @@ model Patient {
 
   date_of_birth         DateTime
   sex                   Sex
+
+  /// @encrypted — direct identifier, excluded from research exports (§10, §11)
+  child_name         String?
+
+  /// Whether the child received a hearing screening at the place of birth
+  /// before being registered at this facility. Null if unknown.
+  screened_at_birth Boolean?
+
   birth_weight_grams    Int
   gestational_age_weeks Decimal  @db.Decimal(4, 2)
   delivery_type         DeliveryType
@@ -350,6 +381,7 @@ model Patient {
   pathway_milestone     PathwayMilestone?
   notifications_log     NotificationLog[]
   parent_survey         ParentSurvey?
+  ear_pathway_states    EarPathwayState[]
 
   @@map("patients")
 }
@@ -453,6 +485,17 @@ model ScreeningEvent {
   patient  Patient @relation(fields: [patient_id], references: [id])
   screener User    @relation("ScreenerUser", fields: [screener_id], references: [id])
 
+  // Additional fields for the unified model
+  clinicalComment  String?
+  entrySource      EntrySource     @default(LIVE)
+  status           RecordStatus    @default(ACTIVE)
+  createdAt        DateTime        @default(now())
+  createdById      String          @db.Uuid    // FIX: was missing @db.Uuid
+  createdBy        User            @relation("ScreeningCreator", fields: [createdById], references: [id])
+
+  correctionRequests CorrectionRequest[]
+
+  @@index([patient_id, ear, stage])
   @@map("screening_events")
 }
 
@@ -488,6 +531,12 @@ model Referral {
 
   patient Patient @relation(fields: [patient_id], references: [id])
 
+  // Additional fields for unified model
+  createdAt             DateTime       @default(now())
+  createdById           String         @db.Uuid    // FIX: was missing @db.Uuid
+  createdBy             User           @relation("ReferralCreator", fields: [createdById], references: [id])
+
+  @@index([patient_id, ear])
   @@map("referrals")
 }
 
@@ -574,6 +623,9 @@ model PathwayMilestone {
   computed_at DateTime @default(now())
 
   patient Patient @relation(fields: [patient_id], references: [id])
+
+  // Additional fields for unified model
+  updatedAt                   DateTime          @updatedAt
 
   @@map("pathway_milestones")
 }
@@ -745,6 +797,14 @@ model CorrectionRequest {
   requester   User  @relation("CorrectionRequestedBy", fields: [requested_by], references: [id])
   reviewer    User? @relation("CorrectionReviewedBy", fields: [reviewed_by], references: [id])
 
+  // Additional fields for unified model
+  resolvedById  String?         @db.Uuid    // FIX: was missing @db.Uuid
+  resolvedBy    User?           @relation("CorrectionResolver", fields: [resolvedById], references: [id])
+  resolvedAt    DateTime?
+  createdAt     DateTime         @default(now())
+
+  screeningEvent ScreeningEvent? @relation(fields: [record_id], references: [id])
+
   @@map("correction_requests")
 }
 
@@ -778,4 +838,21 @@ model QiReviewLog {
   site     Site @relation("QiReviewLogSite", fields: [site_id], references: [id])
 
   @@map("qi_review_log")
+}
+
+// ---------------------------------------------------------------------------
+// Additional Models
+// ---------------------------------------------------------------------------
+
+model EarPathwayState {
+  id        String   @id @default(cuid())
+  patientId String   @db.Uuid              // FIX: was missing @db.Uuid
+  patient   Patient  @relation(fields: [patientId], references: [id])
+  ear       Ear
+  state     String   // EarState enum stored as string for protocol-review clarity
+  modality  Modality
+  updatedAt DateTime @updatedAt
+
+  @@unique([patientId, ear])
+  @@map("ear_pathway_states")
 }

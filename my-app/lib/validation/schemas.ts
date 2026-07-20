@@ -36,20 +36,41 @@ export const QiReviewStatusSchema = z.enum(["OPEN", "IN_PROGRESS", "CLOSED"]);
 
 export const PatientCreateSchema = z.object({
   // Section A — Baby info
-  date_of_birth: z.string().datetime({ message: "Valid datetime required" }),
+  // FIX: z.string().datetime() requires a strict ISO 8601 string with seconds
+  // AND a timezone (e.g. "2026-07-07T14:30:00Z"). <input type="datetime-local">
+  // only ever returns "2026-07-07T14:30" (no seconds, no timezone), so it
+  // failed validation on every valid entry. z.coerce.date() runs the value
+  // through the native Date constructor instead, which parses that format
+  // fine, and later serializes back to a full ISO string automatically when
+  // sent to the API via JSON.stringify.
+  date_of_birth: z.coerce.date({ message: "Valid datetime required" }),
   sex: SexSchema,
-  birth_weight_grams: z.number().int().min(200).max(8000),
-  gestational_age_weeks: z.number().min(22).max(44),
+
+  // Child's name — optional because babies may be named days after birth (§4.1).
+  // Direct identifier: encrypted at rest, excluded from research exports (§10, §11).
+  child_name: z.string().min(1).max(150).nullable().optional(),
+
+  // FIX: z.number() -> z.coerce.number(). HTML <input type="number"> always
+  // hands back a string value; z.coerce.number() converts it to a real number
+  // before running .int()/.min()/.max() checks, instead of rejecting it
+  // outright with "Invalid input: expected number, received string".
+  birth_weight_grams: z.coerce.number().int().min(200).max(8000),
+  gestational_age_weeks: z.coerce.number().min(22).max(44),
   delivery_type: DeliveryTypeSchema,
-  apgar_score_5min: z.number().int().min(0).max(10).nullable().optional(),
+  apgar_score_5min: z.coerce.number().int().min(0).max(10).nullable().optional(),
   hospital_number: z.string().max(50).nullable().optional(),
   nicu_admitted: z.boolean(),
-  nicu_days: z.number().int().min(0).nullable().optional(),
+  nicu_days: z.coerce.number().int().min(0).nullable().optional(),
+
+  // Whether the child received a hearing screening at the place of birth
+  // before being registered at this facility. Null if unknown.
+  screened_at_birth: z.boolean().nullable().optional(),
+
   entry_source: EntrySourceSchema.default("LIVE"),
 
   // Section B — Mother/guardian
   mother_name: z.string().min(2).max(200),
-  mother_age: z.number().int().min(10).max(80),
+  mother_age: z.coerce.number().int().min(10).max(80),
   mother_phone: z.string().min(7).max(20),
   guardian_phone_alt: z.string().max(20).nullable().optional(),
   whatsapp_number: z.string().max(20).nullable().optional(),
@@ -80,10 +101,10 @@ export const PatientCreateSchema = z.object({
   // Section E — Parent survey preferences
   survey_delivery_channel: SurveyDeliveryChannelSchema,
   // Scores only collected if IN_PERSON
-  survey_explanation_clarity_score: z.number().int().min(1).max(5).nullable().optional(),
-  survey_anxiety_before_score: z.number().int().min(1).max(5).nullable().optional(),
-  survey_anxiety_after_score: z.number().int().min(1).max(5).nullable().optional(),
-  survey_satisfaction_score: z.number().int().min(1).max(5).nullable().optional(),
+  survey_explanation_clarity_score: z.coerce.number().int().min(1).max(5).nullable().optional(),
+  survey_anxiety_before_score: z.coerce.number().int().min(1).max(5).nullable().optional(),
+  survey_anxiety_after_score: z.coerce.number().int().min(1).max(5).nullable().optional(),
+  survey_satisfaction_score: z.coerce.number().int().min(1).max(5).nullable().optional(),
   survey_would_recommend: z.boolean().nullable().optional(),
   survey_understood_result: z.boolean().nullable().optional(),
   survey_knowledge_q1_correct: z.boolean().nullable().optional(),
@@ -95,8 +116,8 @@ export type PatientCreateInput = z.infer<typeof PatientCreateSchema>;
 
 // Patient list query params
 export const PatientListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: z.coerce.number().min(1).default(1),      // add .default(1)
+  limit: z.coerce.number().min(1).max(100).default(20), // add .default(20)
   search: z.string().max(200).optional(),
   site_id: z.string().uuid().optional(),
   date_from: z.string().optional(),

@@ -85,6 +85,15 @@ CREATE TYPE "QiReviewStatus" AS ENUM ('OPEN', 'IN_PROGRESS', 'CLOSED');
 -- CreateEnum
 CREATE TYPE "AudiogramTestType" AS ENUM ('AC', 'BC');
 
+-- CreateEnum
+CREATE TYPE "Modality" AS ENUM ('OAE', 'AABR');
+
+-- CreateEnum
+CREATE TYPE "PatientFinalStatus" AS ENUM ('PASSED', 'IN_PROGRESS', 'REFERRED_AUDIOLOGY', 'DIAGNOSED', 'LOST_TO_FOLLOWUP');
+
+-- CreateEnum
+CREATE TYPE "RecordStatus" AS ENUM ('ACTIVE', 'VOIDED');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" UUID NOT NULL,
@@ -131,6 +140,8 @@ CREATE TABLE "patients" (
     "hospital_number" TEXT,
     "date_of_birth" TIMESTAMP(3) NOT NULL,
     "sex" "Sex" NOT NULL,
+    "child_name" TEXT,
+    "screened_at_birth" BOOLEAN,
     "birth_weight_grams" INTEGER NOT NULL,
     "gestational_age_weeks" DECIMAL(4,2) NOT NULL,
     "delivery_type" "DeliveryType" NOT NULL,
@@ -208,6 +219,11 @@ CREATE TABLE "screening_events" (
     "incomplete_reason" TEXT,
     "tested_at" TIMESTAMP(3) NOT NULL,
     "recorded_at" TIMESTAMP(3) NOT NULL,
+    "clinicalComment" TEXT,
+    "entrySource" "EntrySource" NOT NULL DEFAULT 'LIVE',
+    "status" "RecordStatus" NOT NULL DEFAULT 'ACTIVE',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdById" UUID NOT NULL,
 
     CONSTRAINT "screening_events_pkey" PRIMARY KEY ("id")
 );
@@ -228,6 +244,8 @@ CREATE TABLE "referrals" (
     "pe_tube_placed" BOOLEAN,
     "resolved_at" TIMESTAMP(3),
     "status" "ReferralStatus" NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdById" UUID NOT NULL,
 
     CONSTRAINT "referrals_pkey" PRIMARY KEY ("id")
 );
@@ -281,6 +299,7 @@ CREATE TABLE "pathway_milestones" (
     "intervention_within_6_months" BOOLEAN NOT NULL,
     "final_status" "PathwayFinalStatus" NOT NULL,
     "computed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "pathway_milestones_pkey" PRIMARY KEY ("id")
 );
@@ -388,6 +407,9 @@ CREATE TABLE "correction_requests" (
     "reviewed_by" UUID,
     "reviewed_at" TIMESTAMP(3),
     "reviewer_note" TEXT,
+    "resolvedById" UUID,
+    "resolvedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "correction_requests_pkey" PRIMARY KEY ("id")
 );
@@ -410,6 +432,18 @@ CREATE TABLE "qi_review_log" (
     CONSTRAINT "qi_review_log_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "ear_pathway_states" (
+    "id" TEXT NOT NULL,
+    "patientId" UUID NOT NULL,
+    "ear" "Ear" NOT NULL,
+    "state" TEXT NOT NULL,
+    "modality" "Modality" NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ear_pathway_states_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
@@ -423,6 +457,12 @@ CREATE UNIQUE INDEX "consent_records_patient_id_key" ON "consent_records"("patie
 CREATE UNIQUE INDEX "risk_factors_patient_id_key" ON "risk_factors"("patient_id");
 
 -- CreateIndex
+CREATE INDEX "screening_events_patient_id_ear_stage_idx" ON "screening_events"("patient_id", "ear", "stage");
+
+-- CreateIndex
+CREATE INDEX "referrals_patient_id_ear_idx" ON "referrals"("patient_id", "ear");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "pathway_milestones_patient_id_key" ON "pathway_milestones"("patient_id");
 
 -- CreateIndex
@@ -433,6 +473,9 @@ CREATE UNIQUE INDEX "parent_surveys_patient_id_key" ON "parent_surveys"("patient
 
 -- CreateIndex
 CREATE UNIQUE INDEX "quality_snapshots_period_start_period_end_key" ON "quality_snapshots"("period_start", "period_end");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ear_pathway_states_patientId_ear_key" ON "ear_pathway_states"("patientId", "ear");
 
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_site_id_fkey" FOREIGN KEY ("site_id") REFERENCES "sites"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -465,7 +508,13 @@ ALTER TABLE "screening_events" ADD CONSTRAINT "screening_events_patient_id_fkey"
 ALTER TABLE "screening_events" ADD CONSTRAINT "screening_events_screener_id_fkey" FOREIGN KEY ("screener_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "screening_events" ADD CONSTRAINT "screening_events_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "referrals" ADD CONSTRAINT "referrals_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patients"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "referrals" ADD CONSTRAINT "referrals_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "diagnostic_evaluations" ADD CONSTRAINT "diagnostic_evaluations_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patients"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -498,7 +547,16 @@ ALTER TABLE "correction_requests" ADD CONSTRAINT "correction_requests_requested_
 ALTER TABLE "correction_requests" ADD CONSTRAINT "correction_requests_reviewed_by_fkey" FOREIGN KEY ("reviewed_by") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "correction_requests" ADD CONSTRAINT "correction_requests_resolvedById_fkey" FOREIGN KEY ("resolvedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "correction_requests" ADD CONSTRAINT "correction_requests_record_id_fkey" FOREIGN KEY ("record_id") REFERENCES "screening_events"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "qi_review_log" ADD CONSTRAINT "qi_review_log_reviewer_id_fkey" FOREIGN KEY ("reviewer_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "qi_review_log" ADD CONSTRAINT "qi_review_log_site_id_fkey" FOREIGN KEY ("site_id") REFERENCES "sites"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ear_pathway_states" ADD CONSTRAINT "ear_pathway_states_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "patients"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
