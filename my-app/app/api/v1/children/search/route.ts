@@ -1,12 +1,8 @@
 // app/api/v1/children/search/route.ts
-// Replace the entire file with this:
-
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { fuzzyMatch } from '@/lib/search/fuzzyMatch';
 import { decrypt, decryptNullable } from '@/lib/utils/encryption';
-
-const prisma = new PrismaClient();
 
 const SELECT_FIELDS = {
   id: true,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import {
   transitionEarState,
   guardScreening,
@@ -9,8 +9,7 @@ import {
   type EarState,
   type Ear,
 } from '@/lib/pathway';
-
-const prisma = new PrismaClient();
+import { requireAuth, authErrResponse } from '@/lib/Auth/requireAuth';
 
 /**
  * POST /api/v1/children/[id]/screenings
@@ -22,15 +21,17 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let userId: string;
+  try {
+    const user = await requireAuth(request, ['SCREENER', 'DATA_CLERK', 'ADMIN']);
+    userId = user.id;
+  } catch (err) {
+    return authErrResponse(err);
+  }
+
   const { id: patientId } = await params;
   const body = await request.json();
-  const userId = request.headers.get('x-user-id');
-if (!userId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
-  return NextResponse.json(
-    { error: 'Missing or invalid x-user-id header. Cannot attribute this screening to a user.' },
-    { status: 401 }
-  );
-}
+
   // ── Validate patient exists ──
 const patient = await prisma.patient.findUnique({
   where: { id: patientId },
@@ -60,7 +61,7 @@ const patient = await prisma.patient.findUnique({
   if (body.modality && body.modality !== lockedModality) {
     return NextResponse.json(
       {
-        error: `Modality mismatch. This patient requires ${lockedModality} (NICU ${patient.nicuDays ?? 0} days). Modality is system-locked per JCIH protocol.`,
+        error: `Modality mismatch. This patient requires ${lockedModality} (NICU ${patient.nicu_days ?? 0} days). Modality is system-locked per JCIH protocol.`,
       },
       { status: 422 }
     );
@@ -69,6 +70,7 @@ const patient = await prisma.patient.findUnique({
   const results: Array<{
     ear: Ear;
     success: boolean;
+    id?: string;
     newState?: string;
     message?: string;
     error?: string;
@@ -226,6 +228,7 @@ for (const ear of ears) {
     results.push({
       ear,
       success: true,
+      id: screeningEvent.id,
       newState: transition.nextState,
       message: buildConfirmationMessage(ear, stage, body.result, transition.nextState),
     });
@@ -268,7 +271,7 @@ for (const ear of ears) {
     {
       results,
       summary: summaryMessage,
-      screeningEventIds: results.map(() => 'created'), // real IDs in production
+      screeningEventIds: results.map((r) => r.id).filter((id): id is string => Boolean(id)),
     },
     { status: 201 }
   );
@@ -277,7 +280,7 @@ for (const ear of ears) {
 // ─── Helpers ─────────────────────────────────────────────────
 
 async function getEarState(
-  prisma: PrismaClient,
+  prisma: typeof import('@/lib/prisma').prisma,
   patientId: string,
   ear: Ear
 ): Promise<EarState> {

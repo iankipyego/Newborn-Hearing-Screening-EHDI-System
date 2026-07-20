@@ -1,9 +1,7 @@
 // app/api/v1/patients/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { decrypt, decryptNullable } from "@/lib/utils/encryption";
-
-const prisma = new PrismaClient();
 
 const ENCRYPTED_FIELDS = [
   "mother_name",
