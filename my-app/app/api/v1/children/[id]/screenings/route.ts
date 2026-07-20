@@ -145,8 +145,8 @@ for (const ear of ears) {
       stage: stage as any,
       modality: lockedModality,
       equipment_id: body.equipment_id,           // now guaranteed non-null above
-      probe_fit_quality: lockedModality === 'OAE' ? body.probe_fit_quality : null,
-      ambient_noise_level: body.ambient_noise_level ?? 'Medium',
+      probe_fit_quality: lockedModality === 'OAE' ? normalizeEnumCasing(body.probe_fit_quality) : null,
+      ambient_noise_level: normalizeEnumCasing(body.ambient_noise_level) ?? 'Medium',
       attempts: body.attempts ?? 1,
       screener_id: body.screener_id,              // now guaranteed non-null above
       duration_minutes: body.duration_minutes ?? 0,
@@ -187,10 +187,13 @@ for (const ear of ears) {
       if (effect.kind === 'AUTO_CREATE_HCP_REFERRAL') {
         await prisma.referral.create({
           data: {
-            patientId,
+            patient_id: patientId,
             ear,
             type: 'HEALTH_CARE_PROVIDER',
             reason: `Screen 2 NOT_PASS — ${lockedModality} screening`,
+            provider_name: 'To be assigned',
+            facility: 'To be assigned',
+            status: 'PENDING',
             createdById: userId,
           },
         });
@@ -199,10 +202,13 @@ for (const ear of ears) {
       if (effect.kind === 'AUTO_CREATE_AUDIOLOGY_REFERRAL') {
         await prisma.referral.create({
           data: {
-            patientId,
+            patient_id: patientId,
             ear,
             type: 'AUDIOLOGIST',
             reason: `Rescreen NOT_PASS — ${lockedModality} screening`,
+            provider_name: 'To be assigned',
+            facility: 'To be assigned',
+            status: 'PENDING',
             createdById: userId,
           },
         });
@@ -214,14 +220,29 @@ for (const ear of ears) {
     const rightState = await getEarState(prisma, patientId, 'RIGHT');
     const newPatientStatus = derivePatientStatus(leftState, rightState);
 
+    // §4.7 — days from birth to first screening, and whether it met the 1-month target
+    const firstScreen = await prisma.screeningEvent.findFirst({
+      where: { patient_id: patientId },
+      orderBy: { tested_at: 'asc' },
+    });
+    const daysBirthToFirstScreen = firstScreen
+      ? Math.floor((firstScreen.tested_at.getTime() - patient.date_of_birth.getTime()) / 86400000)
+      : 0;
+
     await prisma.pathwayMilestone.upsert({
-      where: { patientId },
+      where: { patient_id: patientId },
       create: {
-        patientId,
-        finalStatus: newPatientStatus as any,
+        patient_id: patientId,
+        days_birth_to_first_screen: daysBirthToFirstScreen,
+        screened_within_1_month: daysBirthToFirstScreen <= 30,
+        diagnosed_within_3_months: false,
+        intervention_within_6_months: false,
+        final_status: newPatientStatus as any,
+        computed_at: new Date(),
       },
       update: {
-        finalStatus: newPatientStatus as any,
+        final_status: newPatientStatus as any,
+        computed_at: new Date(),
       },
     });
 
@@ -278,6 +299,17 @@ for (const ear of ears) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
+
+/**
+ * Prisma enums like AmbientNoiseLevel ("Low"|"Medium"|"High") and
+ * ProbeFitQuality ("Good"|"Fair"|"Poor") only accept exact casing.
+ * The frontend UI currently sends all-caps values (e.g. "MEDIUM"),
+ * so normalize to Prisma's expected Title Case before writing.
+ */
+function normalizeEnumCasing(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
 
 async function getEarState(
   prisma: typeof import('@/lib/prisma').prisma,
