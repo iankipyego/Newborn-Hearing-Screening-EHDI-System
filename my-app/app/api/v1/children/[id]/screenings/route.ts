@@ -99,7 +99,7 @@ for (const ear of ears) {
   }
 
   // ── Required-field validation (equipment cannot be null — schema is non-nullable) ──
-  if (!body.equipmentId) {
+  if (!body.equipment_id) {
     results.push({
       ear,
       success: false,
@@ -108,7 +108,7 @@ for (const ear of ears) {
     continue;
   }
 
-  if (!body.screenerId) {
+  if (!body.screener_id) {
     results.push({
       ear,
       success: false,
@@ -118,18 +118,18 @@ for (const ear of ears) {
   }
 
   // ── Determine tested_at per §6 governance rule ──
-  const entrySource = body.entrySource ?? 'LIVE';
+  const entrySource = body.entry_source ?? body.entrySource ?? 'LIVE';
   const now = new Date();
 
   let testedAt: Date;
   if (entrySource === 'PAPER_BACKUP') {
-    if (!body.testedAt) {
+    if (!body.tested_at) {
       results.push({ ear, success: false, error: 'tested_at is required for PAPER_BACKUP entries.' });
       continue;
     }
-    const parsed = new Date(body.testedAt);
+    const parsed = new Date(body.tested_at);
     if (isNaN(parsed.getTime())) {
-      results.push({ ear, success: false, error: `Invalid tested_at value: "${body.testedAt}".` });
+      results.push({ ear, success: false, error: `Invalid tested_at value: "${body.tested_at}".` });
       continue;
     }
     testedAt = parsed;
@@ -144,15 +144,15 @@ for (const ear of ears) {
       ear,
       stage: stage as any,
       modality: lockedModality,
-      equipment_id: body.equipmentId,           // now guaranteed non-null above
-      probe_fit_quality: lockedModality === 'OAE' ? body.probeFitQuality : null,
-      ambient_noise_level: body.ambientNoiseLevel ?? 'Medium',
+      equipment_id: body.equipment_id,           // now guaranteed non-null above
+      probe_fit_quality: lockedModality === 'OAE' ? body.probe_fit_quality : null,
+      ambient_noise_level: body.ambient_noise_level ?? 'Medium',
       attempts: body.attempts ?? 1,
-      screener_id: body.screenerId,              // now guaranteed non-null above
-      duration_minutes: body.durationMinutes ?? 0,
+      screener_id: body.screener_id,              // now guaranteed non-null above
+      duration_minutes: body.duration_minutes ?? 0,
       result: body.result as any,
-      incomplete_reason: body.result === 'INCOMPLETE' ? body.incompleteReason : null,
-      clinicalComment: body.clinicalComment ?? null,
+      incomplete_reason: body.result === 'INCOMPLETE' ? body.incomplete_reason : null,
+      clinicalComment: body.clinical_comment ?? body.clinicalComment ?? null,
       tested_at: testedAt,
       recorded_at: now,                          // required, no schema default
       entrySource,
