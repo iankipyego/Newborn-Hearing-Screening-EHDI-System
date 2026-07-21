@@ -36,6 +36,9 @@ export async function GET(
       risk_factors: true,
       ear_pathway_states: true,
       pathway_milestone: true,
+      visual_inspections: {
+        orderBy: { inspected_at: "asc" },
+      },
       screening_events: {
         orderBy: [{ tested_at: "asc" }, { ear: "asc" }],
       },

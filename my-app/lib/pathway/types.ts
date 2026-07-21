@@ -15,12 +15,23 @@ export type Ear = "LEFT" | "RIGHT";
 export type ScreeningResult = "PASS" | "NOT_PASS" | "INCOMPLETE";
 export type ScreeningStage = "SCREEN_1" | "SCREEN_2" | "RESCREEN_POST_REFERRAL";
 
+/**
+ * Outcome of the pre-OAE "Visual Inspection and Case History" step
+ * (ECHO protocol p.2). Must be recorded per ear before Screen 1.
+ */
+export type VisualInspectionOutcome =
+  | "PASS"
+  | "MINOR_ANOMALY"
+  | "PE_TUBE"
+  | "REFER_MEDICAL";
+
 // ═══════════════════════════════════════════════════════════════
 // EAR STATE
 // ═══════════════════════════════════════════════════════════════
 
 export type EarStateValue =
   | "NOT_STARTED"
+  | "PENDING_MEDICAL_CLEARANCE_PRESCREEN"
   | "SCREEN_1_PASSED"
   | "SCREEN_1_FAILED"
   | "SCREEN_2_PASSED"
@@ -57,6 +68,10 @@ export type PatientPathwayStatus =
 // ═══════════════════════════════════════════════════════════════
 
 export type PathwayEvent =
+  | {
+      type: "VISUAL_INSPECTION_SAVED";
+      outcome: VisualInspectionOutcome;
+    }
   | {
       type: "SCREENING_SAVED";
       stage: ScreeningStage;
@@ -96,6 +111,10 @@ export type PathwayEvent =
 export type SideEffect =
   | { kind: "RECOMPUTE_MILESTONES" }
   | { kind: "MARK_EAR_RESOLVED" }
+  | { kind: "LOG_VISUAL_INSPECTION_NOTE"; message: string }
+  | { kind: "AUTO_CREATE_HCP_REFERRAL_PRESCREEN" }
+  | { kind: "SCHEDULE_PRESCREEN_HCP_REFERRAL_NOTIFICATIONS" }
+  | { kind: "CANCEL_PRESCREEN_HCP_NOTIFICATION_SERIES" }
   | { kind: "SCHEDULE_SCREEN2_NOTIFICATIONS" }
   | { kind: "SCHEDULE_HCP_REFERRAL_NOTIFICATIONS" }
   | { kind: "AUTO_CREATE_HCP_REFERRAL" }

@@ -8,6 +8,7 @@ import {
   assignModality,
   derivePatientStatus,
   guardScreening,
+  guardVisualInspection,
 } from "./engine";
 import type { SideEffect } from "./types";
 
@@ -299,5 +300,84 @@ describe("derivePatientStatus", () => {
   it("IN_PROGRESS otherwise", () => {
     expect(derivePatientStatus("NOT_STARTED", "NOT_STARTED")).toBe("IN_PROGRESS");
     expect(derivePatientStatus("SCREEN_1_FAILED", "NOT_STARTED")).toBe("IN_PROGRESS");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §2.1 — Visual inspection and case history (pre-OAE)
+// ---------------------------------------------------------------------------
+describe("guardVisualInspection", () => {
+  it("allows visual inspection from NOT_STARTED", () => {
+    expect(guardVisualInspection("NOT_STARTED")).toBeNull();
+  });
+
+  it("blocks a second visual inspection once referred for clearance", () => {
+    expect(guardVisualInspection("PENDING_MEDICAL_CLEARANCE_PRESCREEN")).not.toBeNull();
+  });
+
+  it("blocks visual inspection once Screen 1 has already been recorded", () => {
+    expect(guardVisualInspection("SCREEN_1_PASSED")).not.toBeNull();
+    expect(guardVisualInspection("SCREEN_1_FAILED")).not.toBeNull();
+  });
+});
+
+describe("transitionEarState — VISUAL_INSPECTION_SAVED", () => {
+  it("PASS keeps the ear at NOT_STARTED, ready for Screen 1", () => {
+    const t = transitionEarState("NOT_STARTED", {
+      type: "VISUAL_INSPECTION_SAVED",
+      outcome: "PASS",
+    });
+    expect(t.nextState).toBe("NOT_STARTED");
+  });
+
+  it("MINOR_ANOMALY proceeds to screening but logs a note", () => {
+    const t = transitionEarState("NOT_STARTED", {
+      type: "VISUAL_INSPECTION_SAVED",
+      outcome: "MINOR_ANOMALY",
+    });
+    expect(t.nextState).toBe("NOT_STARTED");
+    expect(hasEffect(t.sideEffects, "LOG_VISUAL_INSPECTION_NOTE")).toBe(true);
+  });
+
+  it("PE_TUBE proceeds to screening and logs an equipment note", () => {
+    const t = transitionEarState("NOT_STARTED", {
+      type: "VISUAL_INSPECTION_SAVED",
+      outcome: "PE_TUBE",
+    });
+    expect(t.nextState).toBe("NOT_STARTED");
+    expect(hasEffect(t.sideEffects, "LOG_VISUAL_INSPECTION_NOTE")).toBe(true);
+  });
+
+  it("REFER_MEDICAL blocks screening and creates an HCP referral", () => {
+    const t = transitionEarState("NOT_STARTED", {
+      type: "VISUAL_INSPECTION_SAVED",
+      outcome: "REFER_MEDICAL",
+    });
+    expect(t.nextState).toBe("PENDING_MEDICAL_CLEARANCE_PRESCREEN");
+    expect(hasEffect(t.sideEffects, "AUTO_CREATE_HCP_REFERRAL_PRESCREEN")).toBe(true);
+  });
+});
+
+describe("guardScreening — blocked by pre-screening visual inspection referral", () => {
+  it("Screen 1 cannot be saved while awaiting medical clearance", () => {
+    expect(guardScreening("PENDING_MEDICAL_CLEARANCE_PRESCREEN", "SCREEN_1")).not.toBeNull();
+  });
+});
+
+describe("transitionEarState — REFERRAL_UPDATED from a visual-inspection referral", () => {
+  it("CLEARED unblocks Screen 1 (returns to NOT_STARTED, not CLEARED_FOR_RESCREEN)", () => {
+    const t = transitionEarState("PENDING_MEDICAL_CLEARANCE_PRESCREEN", {
+      type: "REFERRAL_UPDATED",
+      referralStatus: "CLEARED",
+    });
+    expect(t.nextState).toBe("NOT_STARTED");
+  });
+
+  it("NO_SHOW keeps the ear blocked pending medical clearance", () => {
+    const t = transitionEarState("PENDING_MEDICAL_CLEARANCE_PRESCREEN", {
+      type: "REFERRAL_UPDATED",
+      referralStatus: "NO_SHOW",
+    });
+    expect(t.nextState).toBe("PENDING_MEDICAL_CLEARANCE_PRESCREEN");
   });
 });

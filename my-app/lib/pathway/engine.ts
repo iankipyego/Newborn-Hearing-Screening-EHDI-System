@@ -20,6 +20,7 @@ import type {
   ScreeningStage,
   SideEffect,
   StateTransitionResult,
+  VisualInspectionOutcome,
 } from "./types";
 
 // ═══════════════════════════════════════════════════════════════
@@ -60,6 +61,7 @@ const RESOLVED_STATES: ReadonlySet<EarStateValue> = new Set([
 
 const ACTIVE_STATES: ReadonlySet<EarStateValue> = new Set([
   "NOT_STARTED",
+  "PENDING_MEDICAL_CLEARANCE_PRESCREEN",
   "SCREEN_1_FAILED",
   "SCREEN_2_FAILED",
   "CLEARED_FOR_RESCREEN",
@@ -88,12 +90,32 @@ export function isActiveState(state: EarStateValue): boolean {
 // Returns null if allowed, or an error message string if blocked.
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * §2.1 (visual inspection precondition) — the pre-OAE visual inspection
+ * must be recorded once, while the ear is still NOT_STARTED. If the ear
+ * has already been referred for medical clearance
+ * (PENDING_MEDICAL_CLEARANCE_PRESCREEN), a second visual inspection is
+ * not the right tool — that ear is unblocked via a REFERRAL_UPDATED
+ * event instead (see handleReferralUpdated).
+ */
+export function guardVisualInspection(
+  currentState: EarStateValue
+): string | null {
+  if (currentState !== "NOT_STARTED") {
+    return `Visual inspection cannot be saved for an ear in state "${currentState}". Expected "NOT_STARTED".`;
+  }
+  return null;
+}
+
 export function guardScreening(
   currentState: EarStateValue,
   stage: ScreeningStage
 ): string | null {
   switch (stage) {
     case "SCREEN_1":
+      if (currentState === "PENDING_MEDICAL_CLEARANCE_PRESCREEN") {
+        return `Screen 1 cannot be saved — this ear is awaiting medical clearance from the visual inspection referral. Resolve the referral first.`;
+      }
       if (currentState !== "NOT_STARTED") {
         return `Screen 1 cannot be saved for an ear in state "${currentState}". Expected "NOT_STARTED".`;
       }
@@ -132,6 +154,8 @@ export function getExpectedStage(
   switch (currentState) {
     case "NOT_STARTED":
       return "SCREEN_1";
+    case "PENDING_MEDICAL_CLEARANCE_PRESCREEN":
+      return null;
     case "SCREEN_1_FAILED":
       return "SCREEN_2";
     case "CLEARED_FOR_RESCREEN":
@@ -151,6 +175,9 @@ export function transitionEarState(
   event: PathwayEvent
 ): StateTransitionResult {
   switch (event.type) {
+    case "VISUAL_INSPECTION_SAVED":
+      return handleVisualInspectionSaved(currentState, event.outcome);
+
     case "SCREENING_SAVED":
       return handleScreeningSaved(
         currentState,
@@ -198,6 +225,58 @@ export function transitionEarState(
 }
 
 // ─── Internal handlers ───────────────────────────────────────
+
+// §2.1 — Visual Inspection and Case History (ECHO protocol p.2 table).
+// Runs once per ear, before Screen 1. Only REFER_MEDICAL blocks
+// screening; PASS, MINOR_ANOMALY, and PE_TUBE all proceed straight
+// to OAE screening (the ear stays NOT_STARTED).
+function handleVisualInspectionSaved(
+  currentState: EarStateValue,
+  outcome: VisualInspectionOutcome
+): StateTransitionResult {
+  if (currentState !== "NOT_STARTED") {
+    // Guarded upstream by guardVisualInspection; defensive no-op here.
+    return { nextState: currentState, sideEffects: [] };
+  }
+
+  switch (outcome) {
+    case "PASS":
+      return { nextState: "NOT_STARTED", sideEffects: [] };
+
+    case "MINOR_ANOMALY":
+      return {
+        nextState: "NOT_STARTED",
+        sideEffects: [
+          {
+            kind: "LOG_VISUAL_INSPECTION_NOTE",
+            message:
+              "Minor malformation noted on visual inspection (does not affect canal opening). Proceeding with OAE screening.",
+          },
+        ],
+      };
+
+    case "PE_TUBE":
+      return {
+        nextState: "NOT_STARTED",
+        sideEffects: [
+          {
+            kind: "LOG_VISUAL_INSPECTION_NOTE",
+            message:
+              "PE tube present. Adjust screening equipment if required, then proceed with OAE screening.",
+          },
+        ],
+      };
+
+    case "REFER_MEDICAL":
+      return {
+        nextState: "PENDING_MEDICAL_CLEARANCE_PRESCREEN",
+        sideEffects: [
+          { kind: "AUTO_CREATE_HCP_REFERRAL_PRESCREEN" },
+          { kind: "SCHEDULE_PRESCREEN_HCP_REFERRAL_NOTIFICATIONS" },
+        ],
+      };
+  }
+}
 
 function handleScreeningSaved(
   currentState: EarStateValue,
@@ -288,7 +367,31 @@ function handleReferralUpdated(
   currentState: EarStateValue,
   referralStatus: "CLEARED" | "TREATED" | "SEEN" | "NO_SHOW"
 ): StateTransitionResult {
-  // Referral updates are only valid from SCREEN_2_FAILED
+  // §2.1 — Referral from a failed VISUAL INSPECTION (pre-screening).
+  // Resolving it unblocks Screen 1 directly; it does NOT go through
+  // CLEARED_FOR_RESCREEN, which is reserved for referrals raised
+  // after a failed OAE screening (§17.3).
+  if (currentState === "PENDING_MEDICAL_CLEARANCE_PRESCREEN") {
+    if (referralStatus === "NO_SHOW") {
+      return {
+        nextState: "PENDING_MEDICAL_CLEARANCE_PRESCREEN",
+        sideEffects: [
+          { kind: "LOG_NO_SHOW_EVENT" },
+          { kind: "RESUME_HCP_NOTIFICATION_SERIES" },
+        ],
+      };
+    }
+    // CLEARED, TREATED, or SEEN (PE tube placed) — the blockage,
+    // infection, or malformation flagged at visual inspection has
+    // been resolved; OAE screening (Screen 1) can now proceed.
+    return {
+      nextState: "NOT_STARTED",
+      sideEffects: [{ kind: "CANCEL_PRESCREEN_HCP_NOTIFICATION_SERIES" }],
+    };
+  }
+
+  // Referral updates for post-screening referrals are only valid from
+  // SCREEN_2_FAILED
   if (currentState !== "SCREEN_2_FAILED") {
     return { nextState: currentState, sideEffects: [] };
   }
@@ -444,6 +547,7 @@ export function isPathwayComplete(
 
 const EAR_STATE_LABELS: Record<EarStateValue, string> = {
   NOT_STARTED: "Not Started",
+  PENDING_MEDICAL_CLEARANCE_PRESCREEN: "Awaiting Medical Clearance (Pre-Screening)",
   SCREEN_1_PASSED: "Screen 1 — Passed",
   SCREEN_1_FAILED: "Screen 1 — Not Passed",
   SCREEN_2_PASSED: "Screen 2 — Passed",

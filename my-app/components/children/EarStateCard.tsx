@@ -15,6 +15,8 @@ interface EarStateCardProps {
   state: EarStateValue;
   modality: string;
   patientId: string;
+  /** Whether a visual inspection has been recorded for this ear (§2.1). */
+  hasVisualInspection: boolean;
 }
 
 const EAR_ICONS = {
@@ -30,10 +32,15 @@ const EAR_ICONS = {
   ),
 };
 
-export function EarStateCard({ ear, state, modality, patientId }: EarStateCardProps) {
+export function EarStateCard({ ear, state, modality, patientId, hasVisualInspection }: EarStateCardProps) {
   const resolved = isEarResolved(state);
   const expectedStage = getExpectedStage(state);
-  const canAddScreening = expectedStage !== null;
+  // Screen 1 cannot be recorded until the pre-OAE visual inspection (§2.1)
+  // has been done — guardVisualInspection/guardScreening enforce this
+  // server-side too; this just keeps the button honest.
+  const needsVisualInspectionFirst =
+    state === 'NOT_STARTED' && !hasVisualInspection;
+  const canAddScreening = expectedStage !== null && !needsVisualInspectionFirst;
 
   return (
     <div
@@ -71,6 +78,16 @@ export function EarStateCard({ ear, state, modality, patientId }: EarStateCardPr
           <p className="text-sm text-emerald-700 font-medium">
             ✓ Ear resolved — no further action needed
           </p>
+        ) : needsVisualInspectionFirst ? (
+          <Link
+            href={`/children/${patientId}/visual-inspection/new?ear=${ear}`}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Record Visual Inspection
+          </Link>
         ) : canAddScreening ? (
           <Link
             href={`/children/${patientId}/screenings/new?ear=${ear}&stage=${expectedStage}`}
@@ -87,13 +104,15 @@ export function EarStateCard({ ear, state, modality, patientId }: EarStateCardPr
               ? 'Awaiting diagnostic evaluation'
               : state === 'SCREEN_2_FAILED'
                 ? 'Awaiting HCP referral resolution'
-                : state === 'PENDING_LTFU'
-                  ? 'Pending LTFU review by supervisor'
-                  : state === 'LOST_TO_FOLLOWUP'
-                    ? 'Case closed — lost to follow-up'
-                    : state === 'DIAGNOSED'
-                      ? 'Diagnostic evaluation complete'
-                      : 'No action available in current state'}
+                : state === 'PENDING_MEDICAL_CLEARANCE_PRESCREEN'
+                  ? 'Visual inspection flagged this ear — awaiting HCP referral resolution before screening can begin'
+                  : state === 'PENDING_LTFU'
+                    ? 'Pending LTFU review by supervisor'
+                    : state === 'LOST_TO_FOLLOWUP'
+                      ? 'Case closed — lost to follow-up'
+                      : state === 'DIAGNOSED'
+                        ? 'Diagnostic evaluation complete'
+                        : 'No action available in current state'}
           </p>
         )}
       </div>

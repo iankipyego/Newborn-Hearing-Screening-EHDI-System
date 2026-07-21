@@ -98,6 +98,23 @@ for (const ear of ears) {
     continue;
   }
 
+  // ── §2.1 — Screen 1 requires a visual inspection on file for this ear.
+  //    Enforced here (not just in the UI) so any entry point — the
+  //    top-level "+ Add Screening Result" shortcut included — is covered. ──
+  if (stage === 'SCREEN_1') {
+    const inspection = await prisma.visualInspection.findFirst({
+      where: { patient_id: patientId, ear },
+    });
+    if (!inspection) {
+      results.push({
+        ear,
+        success: false,
+        error: `Visual inspection has not been recorded for the ${ear.toLowerCase()} ear. Record it first: /children/${patientId}/visual-inspection/new?ear=${ear}`,
+      });
+      continue;
+    }
+  }
+
   // ── Required-field validation (equipment cannot be null — schema is non-nullable) ──
   if (!body.equipment_id) {
     results.push({

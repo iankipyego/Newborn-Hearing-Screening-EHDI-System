@@ -90,6 +90,23 @@ enum ScreeningResult {
   INCOMPLETE
 }
 
+/// Outcome of the pre-OAE visual inspection / case history step (ECHO
+/// protocol p.2, "Visual Inspection and Case History" table). This step
+/// happens BEFORE any OAE screening and gates whether screening may
+/// proceed immediately or only after medical clearance.
+enum VisualInspectionOutcome {
+  /// Ear canal is clear — proceed with OAE screening.
+  PASS
+  /// Pits, skin tags, or other minimal malformation that does not affect
+  /// the canal opening — proceed with OAE, but note the abnormality.
+  MINOR_ANOMALY
+  /// PE tube present — adjust equipment if required, proceed with OAE.
+  PE_TUBE
+  /// Canal blockage, signs of infection, or a significant malformation —
+  /// OAE screening is BLOCKED until medical clearance is obtained.
+  REFER_MEDICAL
+}
+
 enum ReferralType {
   HEALTH_CARE_PROVIDER
   AUDIOLOGIST
@@ -290,6 +307,10 @@ model User {
   referrals_created            Referral[]               @relation("ReferralCreator")
   correction_requests_resolved CorrectionRequest[]      @relation("CorrectionResolver")
 
+  // Visual inspection (pre-OAE) relations
+  visual_inspections_screened  VisualInspection[]       @relation("VisualInspectionScreener")
+  visual_inspections_created   VisualInspection[]       @relation("VisualInspectionCreator")
+
   @@map("users")
 }
 
@@ -375,6 +396,7 @@ model Patient {
   site                  Site                 @relation("PatientSite", fields: [site_id], references: [id])
   consent_record        ConsentRecord?
   risk_factors          RiskFactor?
+  visual_inspections    VisualInspection[]
   screening_events      ScreeningEvent[]
   referrals             Referral[]
   diagnostic_evaluations DiagnosticEvaluation[]
@@ -445,6 +467,43 @@ model RiskFactor {
   patient Patient @relation(fields: [patient_id], references: [id])
 
   @@map("risk_factors")
+}
+
+// ---------------------------------------------------------------------------
+// 4.35  visual_inspections
+// Pre-OAE "Visual Inspection and Case History" step (ECHO protocol p.2).
+// Must be recorded per ear BEFORE the first OAE screening can be saved —
+// enforced via guardVisualInspection / guardScreening in lib/pathway.
+// ---------------------------------------------------------------------------
+
+model VisualInspection {
+  id         String @id @default(uuid()) @db.Uuid
+  patient_id String @db.Uuid
+
+  /// Independent per ear — never combine
+  ear     Ear
+  outcome VisualInspectionOutcome
+
+  /// Free-text detail — e.g. "pit above tragus", "wax occlusion",
+  /// "PE tube left ear". Not coded; for clinical record only.
+  finding_note String?
+
+  screener_id String @db.Uuid
+
+  /// Auto-timestamp from system clock — not manually typed
+  inspected_at DateTime
+  recorded_at  DateTime
+
+  patient  Patient @relation(fields: [patient_id], references: [id])
+  screener User    @relation("VisualInspectionScreener", fields: [screener_id], references: [id])
+
+  entrySource EntrySource  @default(LIVE)
+  createdAt   DateTime     @default(now())
+  createdById String       @db.Uuid
+  createdBy   User         @relation("VisualInspectionCreator", fields: [createdById], references: [id])
+
+  @@index([patient_id, ear])
+  @@map("visual_inspections")
 }
 
 // ---------------------------------------------------------------------------

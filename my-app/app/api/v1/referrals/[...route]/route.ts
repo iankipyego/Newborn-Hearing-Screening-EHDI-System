@@ -91,14 +91,23 @@ export async function PATCH(
     }
 
     // Only HCP referrals drive a pathway transition here — see file header.
+    // Two distinct HCP-referral origins reach this same PATCH: a Screen 2
+    // failure (currentState === "SCREEN_2_FAILED") and a pre-screening
+    // visual-inspection block (currentState ===
+    // "PENDING_MEDICAL_CLEARANCE_PRESCREEN", §2.1). Both resolve the same
+    // way (CLEARED/TREATED/SEEN/NO_SHOW) but land in different next states
+    // — see handleReferralUpdated in lib/pathway/engine.ts.
     let transition: ReturnType<typeof transitionEarState> | null = null;
     let currentState: EarStateValue | null = null;
     if (referral.type === "HEALTH_CARE_PROVIDER") {
       currentState = await getEarState(referral.patient_id, referral.ear);
-      if (currentState !== "SCREEN_2_FAILED") {
+      if (
+        currentState !== "SCREEN_2_FAILED" &&
+        currentState !== "PENDING_MEDICAL_CLEARANCE_PRESCREEN"
+      ) {
         return NextResponse.json(
           {
-            error: `Ear is in state "${currentState}", not "SCREEN_2_FAILED" — this referral no longer matches the ear's current pathway position. Check for a newer referral on this ear.`,
+            error: `Ear is in state "${currentState}", not "SCREEN_2_FAILED" or "PENDING_MEDICAL_CLEARANCE_PRESCREEN" — this referral no longer matches the ear's current pathway position. Check for a newer referral on this ear.`,
           },
           { status: 422 }
         );
@@ -166,7 +175,9 @@ export async function PATCH(
     const message = transition
       ? transition.nextState === "CLEARED_FOR_RESCREEN"
         ? `Referral resolved (${d.status}) — ${referral.ear.toLowerCase()} ear cleared for rescreen.`
-        : `Referral marked ${d.status} — no-show logged, HCP notification series resumed. Ear remains at Screen 2 failed pending follow-up.`
+        : transition.nextState === "NOT_STARTED"
+          ? `Referral resolved (${d.status}) — ${referral.ear.toLowerCase()} ear cleared. Screen 1 can now be recorded.`
+          : `Referral marked ${d.status} — no-show logged, HCP notification series resumed. Ear remains at ${currentState === "PENDING_MEDICAL_CLEARANCE_PRESCREEN" ? "pre-screening referral" : "Screen 2 failed"} pending follow-up.`
       : `Referral marked ${d.status}.`;
 
     return NextResponse.json({ referral: result, next_state: transition?.nextState ?? null, message });

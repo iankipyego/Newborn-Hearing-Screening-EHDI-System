@@ -47,6 +47,13 @@ interface Patient {
     state: string;
     modality: string;
   }> | null;
+  visual_inspections: Array<{
+    id: string;
+    ear: "LEFT" | "RIGHT";
+    outcome: string;
+    finding_note: string | null;
+    inspected_at: string;
+  }> | null;
   screening_events: Array<{
     id: string;
     ear: string;
@@ -423,12 +430,18 @@ export default function ChildProfilePage() {
           state={leftEarState}
           modality={leftModality}
           patientId={patient.id}
+          hasVisualInspection={Boolean(
+            patient.visual_inspections?.some((v) => v.ear === "LEFT")
+          )}
         />
         <EarStateCard
           ear="RIGHT"
           state={rightEarState}
           modality={rightModality}
           patientId={patient.id}
+          hasVisualInspection={Boolean(
+            patient.visual_inspections?.some((v) => v.ear === "RIGHT")
+          )}
         />
       </div>
 

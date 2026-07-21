@@ -356,6 +356,14 @@ export default function NewScreeningPage({
       {error && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
           {error}
+          {error.includes("Visual inspection has not been recorded") && (
+            <Link
+              href={`/children/${id}/visual-inspection/new?ear=${ear === "BOTH" ? "BOTH" : ear}`}
+              className="mt-2 block font-medium text-blue-700 hover:underline"
+            >
+              → Record the visual inspection now
+            </Link>
+          )}
         </div>
       )}
 

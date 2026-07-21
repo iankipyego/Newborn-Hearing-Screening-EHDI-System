@@ -18,6 +18,7 @@ export const ScreeningModalitySchema = z.enum(["OAE", "AABR"]);
 export const ProbeFitQualitySchema = z.enum(["Good", "Fair", "Poor"]);
 export const AmbientNoiseLevelSchema = z.enum(["Low", "Medium", "High"]);
 export const ScreeningResultSchema = z.enum(["PASS", "NOT_PASS", "INCOMPLETE"]);
+export const VisualInspectionOutcomeSchema = z.enum(["PASS", "MINOR_ANOMALY", "PE_TUBE", "REFER_MEDICAL"]);
 export const ReferralTypeSchema = z.enum(["HEALTH_CARE_PROVIDER", "AUDIOLOGIST"]);
 export const DiagnosisAtReferralSchema = z.enum(["Otitis_media", "Blockage", "Infection", "Clear", "Other"]);
 export const ReferralStatusSchema = z.enum(["PENDING", "CLEARED", "TREATED", "NO_SHOW", "SEEN"]);
@@ -123,6 +124,24 @@ export const PatientListQuerySchema = z.object({
   date_from: z.string().optional(),
   date_to: z.string().optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Visual inspection (§2.1 — pre-OAE "Visual Inspection and Case History")
+// ---------------------------------------------------------------------------
+
+export const VisualInspectionCreateSchema = z.object({
+  ear: EarSchema,
+  outcome: VisualInspectionOutcomeSchema,
+  finding_note: z.string().max(1000).nullable().optional(),
+  screener_id: z.string().uuid(),
+  inspected_at: z.string().datetime(),
+  entry_source: EntrySourceSchema.default("LIVE"),
+}).refine(
+  (d) => d.outcome !== "REFER_MEDICAL" || (d.finding_note && d.finding_note.length > 0),
+  { message: "finding_note is required when outcome is REFER_MEDICAL", path: ["finding_note"] }
+);
+
+export type VisualInspectionCreateInput = z.infer<typeof VisualInspectionCreateSchema>;
 
 // ---------------------------------------------------------------------------
 // Screening event (§16.5)

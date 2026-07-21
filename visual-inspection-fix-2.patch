@@ -1,0 +1,73 @@
+diff --git a/my-app/app/(app)/children/[id]/screenings/new/page.tsx b/my-app/app/(app)/children/[id]/screenings/new/page.tsx
+index 804f9db..9d11188 100644
+--- a/my-app/app/(app)/children/[id]/screenings/new/page.tsx
++++ b/my-app/app/(app)/children/[id]/screenings/new/page.tsx
+@@ -356,6 +356,14 @@ export default function NewScreeningPage({
+       {error && (
+         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+           {error}
++          {error.includes("Visual inspection has not been recorded") && (
++            <Link
++              href={`/children/${id}/visual-inspection/new?ear=${ear === "BOTH" ? "BOTH" : ear}`}
++              className="mt-2 block font-medium text-blue-700 hover:underline"
++            >
++              → Record the visual inspection now
++            </Link>
++          )}
+         </div>
+       )}
+ 
+diff --git a/my-app/app/(app)/children/[id]/visual-inspection/new/page.tsx b/my-app/app/(app)/children/[id]/visual-inspection/new/page.tsx
+index 102cc49..9097413 100644
+--- a/my-app/app/(app)/children/[id]/visual-inspection/new/page.tsx
++++ b/my-app/app/(app)/children/[id]/visual-inspection/new/page.tsx
+@@ -133,12 +133,18 @@ export default function NewVisualInspectionPage({
+         return;
+       }
+ 
++      const blocksScreening = outcome === "REFER_MEDICAL";
++
+       setSuccess(
+-        outcome === "REFER_MEDICAL"
++        blocksScreening
+           ? "Visual inspection saved. This ear is now awaiting medical clearance — an HCP referral was created automatically."
+-          : "Visual inspection saved. You can now record the OAE screening result."
++          : "Visual inspection saved. Taking you to the OAE Screen 1 form…"
+       );
+-      setTimeout(() => router.push(`/children/${id}`), 1500);
++
++      const destination = blocksScreening
++        ? `/children/${id}`
++        : `/children/${id}/screenings/new?ear=${ear}&stage=SCREEN_1`;
++      setTimeout(() => router.push(destination), blocksScreening ? 1500 : 900);
+     } catch {
+       setError("Network error — please try again");
+     } finally {
+diff --git a/my-app/app/api/v1/children/[id]/screenings/route.ts b/my-app/app/api/v1/children/[id]/screenings/route.ts
+index f2578c3..ca06a79 100644
+--- a/my-app/app/api/v1/children/[id]/screenings/route.ts
++++ b/my-app/app/api/v1/children/[id]/screenings/route.ts
+@@ -98,6 +98,23 @@ for (const ear of ears) {
+     continue;
+   }
+ 
++  // ── §2.1 — Screen 1 requires a visual inspection on file for this ear.
++  //    Enforced here (not just in the UI) so any entry point — the
++  //    top-level "+ Add Screening Result" shortcut included — is covered. ──
++  if (stage === 'SCREEN_1') {
++    const inspection = await prisma.visualInspection.findFirst({
++      where: { patient_id: patientId, ear },
++    });
++    if (!inspection) {
++      results.push({
++        ear,
++        success: false,
++        error: `Visual inspection has not been recorded for the ${ear.toLowerCase()} ear. Record it first: /children/${patientId}/visual-inspection/new?ear=${ear}`,
++      });
++      continue;
++    }
++  }
++
+   // ── Required-field validation (equipment cannot be null — schema is non-nullable) ──
+   if (!body.equipment_id) {
+     results.push({

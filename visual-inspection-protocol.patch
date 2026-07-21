@@ -1,0 +1,1095 @@
+diff --git a/my-app/app/(app)/children/[id]/page.tsx b/my-app/app/(app)/children/[id]/page.tsx
+index 21dfaca..0ada910 100644
+--- a/my-app/app/(app)/children/[id]/page.tsx
++++ b/my-app/app/(app)/children/[id]/page.tsx
+@@ -47,6 +47,13 @@ interface Patient {
+     state: string;
+     modality: string;
+   }> | null;
++  visual_inspections: Array<{
++    id: string;
++    ear: "LEFT" | "RIGHT";
++    outcome: string;
++    finding_note: string | null;
++    inspected_at: string;
++  }> | null;
+   screening_events: Array<{
+     id: string;
+     ear: string;
+@@ -423,12 +430,18 @@ export default function ChildProfilePage() {
+           state={leftEarState}
+           modality={leftModality}
+           patientId={patient.id}
++          hasVisualInspection={Boolean(
++            patient.visual_inspections?.some((v) => v.ear === "LEFT")
++          )}
+         />
+         <EarStateCard
+           ear="RIGHT"
+           state={rightEarState}
+           modality={rightModality}
+           patientId={patient.id}
++          hasVisualInspection={Boolean(
++            patient.visual_inspections?.some((v) => v.ear === "RIGHT")
++          )}
+         />
+       </div>
+ 
+diff --git a/my-app/app/(app)/children/[id]/visual-inspection/new/page.tsx b/my-app/app/(app)/children/[id]/visual-inspection/new/page.tsx
+new file mode 100644
+index 0000000..102cc49
+--- /dev/null
++++ b/my-app/app/(app)/children/[id]/visual-inspection/new/page.tsx
+@@ -0,0 +1,284 @@
++// app/(app)/children/[id]/visual-inspection/new/page.tsx
++"use client";
++
++import { useState, useEffect, use } from "react";
++import { useRouter } from "next/navigation";
++import type { Ear } from "@/lib/pathway";
++
++interface Screener {
++  id: string;
++  name: string;
++}
++
++type Outcome = "PASS" | "MINOR_ANOMALY" | "PE_TUBE" | "REFER_MEDICAL";
++
++const OUTCOME_OPTIONS: Array<{
++  value: Outcome;
++  label: string;
++  helper: string;
++}> = [
++  {
++    value: "PASS",
++    label: "Passes visual inspection",
++    helper: "Document and proceed with the OAE screening.",
++  },
++  {
++    value: "MINOR_ANOMALY",
++    label: "Pits, skin tags, or other minimal malformation",
++    helper: "Does not affect the ear canal opening — proceed with OAE screening.",
++  },
++  {
++    value: "PE_TUBE",
++    label: "PE tube present",
++    helper: "Adjust screening equipment if your model requires it, then proceed with OAE.",
++  },
++  {
++    value: "REFER_MEDICAL",
++    label: "Blockage, signs of infection, or a significant malformation",
++    helper:
++      "Refer to medical follow-up. OAE screening is blocked until medical clearance is recorded on the referral.",
++  },
++];
++
++function authHeaders(): Record<string, string> {
++  const token = document.cookie
++    .split("; ")
++    .find((row) => row.startsWith("access_token="))
++    ?.split("=")[1];
++  return token ? { Authorization: `Bearer ${token}` } : {};
++}
++
++export default function NewVisualInspectionPage({
++  params,
++}: {
++  params: Promise<{ id: string }>;
++}) {
++  const { id } = use(params);
++  const router = useRouter();
++
++  const [screeners, setScreeners] = useState<Screener[]>([]);
++  const [loading, setLoading] = useState(true);
++  const [submitting, setSubmitting] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [success, setSuccess] = useState<string | null>(null);
++
++  const [ear, setEar] = useState<Ear | "BOTH">("LEFT");
++  const [outcome, setOutcome] = useState<Outcome>("PASS");
++  const [findingNote, setFindingNote] = useState("");
++  const [screenerId, setScreenerId] = useState("");
++  const [inspectedAt, setInspectedAt] = useState(() => {
++    const now = new Date();
++    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
++    return now.toISOString().slice(0, 16);
++  });
++
++  useEffect(() => {
++    const urlParams = new URLSearchParams(window.location.search);
++    const earParam = urlParams.get("ear") as Ear | "BOTH" | null;
++    if (earParam && ["LEFT", "RIGHT", "BOTH"].includes(earParam)) {
++      setEar(earParam);
++    }
++
++    async function loadScreeners() {
++      try {
++        const res = await fetch("/api/v1/users?role=SCREENER", {
++          headers: authHeaders(),
++          cache: "no-store",
++        });
++        if (res.ok) {
++          const data = await res.json();
++          setScreeners(data.users ?? []);
++        }
++      } catch {
++        // Non-fatal — screener select just stays empty.
++      } finally {
++        setLoading(false);
++      }
++    }
++    loadScreeners();
++  }, []);
++
++  async function handleSubmit(e: React.FormEvent) {
++    e.preventDefault();
++    if (!screenerId) return;
++    if (outcome === "REFER_MEDICAL" && !findingNote.trim()) {
++      setError("A finding note is required when referring for medical follow-up.");
++      return;
++    }
++
++    setSubmitting(true);
++    setError(null);
++
++    try {
++      const res = await fetch(`/api/v1/children/${id}/visual-inspection`, {
++        method: "POST",
++        headers: { "Content-Type": "application/json", ...authHeaders() },
++        body: JSON.stringify({
++          ear,
++          outcome,
++          finding_note: findingNote || null,
++          screener_id: screenerId,
++          inspected_at: new Date(inspectedAt).toISOString(),
++        }),
++      });
++
++      const data = await res.json();
++
++      if (!res.ok) {
++        const messages = (data.results ?? [])
++          .filter((r: any) => !r.success)
++          .map((r: any) => r.error)
++          .join(". ");
++        setError(messages || data.error || "Failed to save visual inspection");
++        return;
++      }
++
++      setSuccess(
++        outcome === "REFER_MEDICAL"
++          ? "Visual inspection saved. This ear is now awaiting medical clearance — an HCP referral was created automatically."
++          : "Visual inspection saved. You can now record the OAE screening result."
++      );
++      setTimeout(() => router.push(`/children/${id}`), 1500);
++    } catch {
++      setError("Network error — please try again");
++    } finally {
++      setSubmitting(false);
++    }
++  }
++
++  if (loading) {
++    return (
++      <div className="flex items-center justify-center py-20">
++        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
++      </div>
++    );
++  }
++
++  return (
++    <div className="mx-auto max-w-2xl px-4 py-10">
++      <h1 className="text-lg font-semibold text-gray-900">
++        Visual Inspection &amp; Case History
++      </h1>
++      <p className="mt-1 text-sm text-gray-500">
++        Required before the first OAE screening (ECHO protocol, §2.1). Each
++        ear is assessed independently.
++      </p>
++
++      {success ? (
++        <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-6 text-emerald-800">
++          {success}
++        </div>
++      ) : (
++        <form onSubmit={handleSubmit} className="mt-6 space-y-6">
++          {error && (
++            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
++              {error}
++            </div>
++          )}
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Ear</label>
++            <div className="mt-2 flex gap-2">
++              {(["LEFT", "RIGHT", "BOTH"] as const).map((opt) => (
++                <button
++                  type="button"
++                  key={opt}
++                  onClick={() => setEar(opt)}
++                  className={`rounded-lg border px-4 py-2 text-sm font-medium ${
++                    ear === opt
++                      ? "border-blue-600 bg-blue-50 text-blue-700"
++                      : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
++                  }`}
++                >
++                  {opt === "BOTH" ? "Both ears" : opt.charAt(0) + opt.slice(1).toLowerCase()}
++                </button>
++              ))}
++            </div>
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Finding</label>
++            <div className="mt-2 space-y-2">
++              {OUTCOME_OPTIONS.map((opt) => (
++                <label
++                  key={opt.value}
++                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
++                    outcome === opt.value
++                      ? "border-blue-600 bg-blue-50"
++                      : "border-gray-200 hover:bg-gray-50"
++                  }`}
++                >
++                  <input
++                    type="radio"
++                    name="outcome"
++                    className="mt-1"
++                    checked={outcome === opt.value}
++                    onChange={() => setOutcome(opt.value)}
++                  />
++                  <span>
++                    <span className="block text-sm font-medium text-gray-900">
++                      {opt.label}
++                    </span>
++                    <span className="block text-xs text-gray-500">{opt.helper}</span>
++                  </span>
++                </label>
++              ))}
++            </div>
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">
++              Finding note{" "}
++              {outcome === "REFER_MEDICAL" && (
++                <span className="text-red-600">(required)</span>
++              )}
++            </label>
++            <textarea
++              value={findingNote}
++              onChange={(e) => setFindingNote(e.target.value)}
++              rows={3}
++              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
++              placeholder="e.g. wax occlusion, PE tube left ear, pit above tragus"
++            />
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Screener</label>
++            <select
++              value={screenerId}
++              onChange={(e) => setScreenerId(e.target.value)}
++              required
++              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
++            >
++              <option value="">Select screener…</option>
++              {screeners.map((s) => (
++                <option key={s.id} value={s.id}>
++                  {s.name}
++                </option>
++              ))}
++            </select>
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Inspected at</label>
++            <input
++              type="datetime-local"
++              value={inspectedAt}
++              onChange={(e) => setInspectedAt(e.target.value)}
++              required
++              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
++            />
++          </div>
++
++          <button
++            type="submit"
++            disabled={submitting || !screenerId}
++            className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
++          >
++            {submitting ? "Saving…" : "Save Visual Inspection"}
++          </button>
++        </form>
++      )}
++    </div>
++  );
++}
+diff --git a/my-app/app/api/v1/children/[id]/route.ts b/my-app/app/api/v1/children/[id]/route.ts
+index c07fcd9..d135067 100644
+--- a/my-app/app/api/v1/children/[id]/route.ts
++++ b/my-app/app/api/v1/children/[id]/route.ts
+@@ -36,6 +36,9 @@ export async function GET(
+       risk_factors: true,
+       ear_pathway_states: true,
+       pathway_milestone: true,
++      visual_inspections: {
++        orderBy: { inspected_at: "asc" },
++      },
+       screening_events: {
+         orderBy: [{ tested_at: "asc" }, { ear: "asc" }],
+       },
+diff --git a/my-app/app/api/v1/children/[id]/visual-inspection/route.ts b/my-app/app/api/v1/children/[id]/visual-inspection/route.ts
+new file mode 100644
+index 0000000..9a399e4
+--- /dev/null
++++ b/my-app/app/api/v1/children/[id]/visual-inspection/route.ts
+@@ -0,0 +1,154 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import {
++  transitionEarState,
++  guardVisualInspection,
++  type EarStateValue,
++  type Ear,
++} from '@/lib/pathway';
++import { VisualInspectionCreateSchema } from '@/lib/validation/schemas';
++import { requireAuth, authErrResponse } from '@/lib/auth/requireAuth';
++
++/**
++ * POST /api/v1/children/[id]/visual-inspection
++ *
++ * Records the pre-OAE "Visual Inspection and Case History" step
++ * (ECHO protocol p.2) for one or both ears, and runs the pathway
++ * engine. REFER_MEDICAL blocks that ear's Screen 1 until the
++ * resulting HCP referral is resolved (PATCH the referral, which
++ * transitions the ear back to NOT_STARTED).
++ */
++export async function POST(
++  request: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  let userId: string;
++  try {
++    const user = await requireAuth(request, ['SCREENER', 'DATA_CLERK', 'ADMIN']);
++    userId = user.id;
++  } catch (err) {
++    return authErrResponse(err);
++  }
++
++  const { id: patientId } = await params;
++  const body = await request.json();
++
++  const patient = await prisma.patient.findUnique({ where: { id: patientId } });
++  if (!patient) {
++    return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
++  }
++
++  const ears: Ear[] = body.ear === 'BOTH' ? ['LEFT', 'RIGHT'] : [body.ear];
++  if (!ears.length || !['LEFT', 'RIGHT'].includes(ears[0])) {
++    return NextResponse.json(
++      { error: 'Invalid ear value. Must be LEFT, RIGHT, or BOTH.' },
++      { status: 422 }
++    );
++  }
++
++  const results: Array<{
++    ear: Ear;
++    success: boolean;
++    id?: string;
++    newState?: string;
++    error?: string;
++  }> = [];
++
++  for (const ear of ears) {
++    const parsed = VisualInspectionCreateSchema.safeParse({ ...body, ear });
++    if (!parsed.success) {
++      results.push({
++        ear,
++        success: false,
++        error: parsed.error.issues.map((i) => i.message).join('; '),
++      });
++      continue;
++    }
++    const data = parsed.data;
++
++    const earState = await prisma.earPathwayState.findUnique({
++      where: { patientId_ear: { patientId, ear } },
++    });
++    const currentState: EarStateValue = (earState?.state as EarStateValue) ?? 'NOT_STARTED';
++
++    // ── Guard: visual inspection must be the FIRST thing recorded (§2.1) ──
++    const guardError = guardVisualInspection(currentState);
++    if (guardError) {
++      results.push({ ear, success: false, error: guardError });
++      continue;
++    }
++
++    const now = new Date();
++    const inspectedAt = new Date(data.inspected_at);
++
++    const visualInspection = await prisma.visualInspection.create({
++      data: {
++        patient_id: patientId,
++        ear,
++        outcome: data.outcome,
++        finding_note: data.finding_note ?? null,
++        screener_id: data.screener_id,
++        inspected_at: inspectedAt,
++        recorded_at: now,
++        entrySource: data.entry_source,
++        createdById: userId,
++      },
++    });
++
++    // ── Run pathway engine (pure logic) ──
++    const transition = transitionEarState(currentState, {
++      type: 'VISUAL_INSPECTION_SAVED',
++      outcome: data.outcome,
++    });
++
++    // NOT_STARTED is the DB default — only upsert when the state
++    // actually needs to record something other than the default,
++    // or when a row already exists.
++    if (transition.nextState !== 'NOT_STARTED' || earState) {
++      await prisma.earPathwayState.upsert({
++        where: { patientId_ear: { patientId, ear } },
++        create: {
++          patientId,
++          ear,
++          state: transition.nextState,
++          modality: earState?.modality ?? 'OAE',
++        },
++        update: { state: transition.nextState },
++      });
++    }
++
++    // ── Handle side effects that require a referral record ──
++    for (const effect of transition.sideEffects) {
++      if (effect.kind === 'AUTO_CREATE_HCP_REFERRAL_PRESCREEN') {
++        await prisma.referral.create({
++          data: {
++            patient_id: patientId,
++            ear,
++            type: 'HEALTH_CARE_PROVIDER',
++            reason: `Visual inspection referral — ${data.finding_note ?? 'blockage/infection/malformation noted'}`,
++            provider_name: 'To be assigned',
++            facility: 'To be assigned',
++            status: 'PENDING',
++            createdById: userId,
++          },
++        });
++      }
++      // SCHEDULE_PRESCREEN_HCP_REFERRAL_NOTIFICATIONS: Phase 2 will wire
++      // this into lib/notifications/scheduler.ts, same as the existing
++      // SCHEDULE_HCP_REFERRAL_NOTIFICATIONS side effect for Screen 2.
++    }
++
++    results.push({
++      ear,
++      success: true,
++      id: visualInspection.id,
++      newState: transition.nextState,
++    });
++  }
++
++  const hasErrors = results.some((r) => !r.success);
++  return NextResponse.json(
++    { results },
++    { status: hasErrors ? 422 : 201 }
++  );
++}
+diff --git a/my-app/app/api/v1/referrals/[...route]/route.ts b/my-app/app/api/v1/referrals/[...route]/route.ts
+index 3f6df75..e882a5e 100644
+--- a/my-app/app/api/v1/referrals/[...route]/route.ts
++++ b/my-app/app/api/v1/referrals/[...route]/route.ts
+@@ -91,14 +91,23 @@ export async function PATCH(
+     }
+ 
+     // Only HCP referrals drive a pathway transition here — see file header.
++    // Two distinct HCP-referral origins reach this same PATCH: a Screen 2
++    // failure (currentState === "SCREEN_2_FAILED") and a pre-screening
++    // visual-inspection block (currentState ===
++    // "PENDING_MEDICAL_CLEARANCE_PRESCREEN", §2.1). Both resolve the same
++    // way (CLEARED/TREATED/SEEN/NO_SHOW) but land in different next states
++    // — see handleReferralUpdated in lib/pathway/engine.ts.
+     let transition: ReturnType<typeof transitionEarState> | null = null;
+     let currentState: EarStateValue | null = null;
+     if (referral.type === "HEALTH_CARE_PROVIDER") {
+       currentState = await getEarState(referral.patient_id, referral.ear);
+-      if (currentState !== "SCREEN_2_FAILED") {
++      if (
++        currentState !== "SCREEN_2_FAILED" &&
++        currentState !== "PENDING_MEDICAL_CLEARANCE_PRESCREEN"
++      ) {
+         return NextResponse.json(
+           {
+-            error: `Ear is in state "${currentState}", not "SCREEN_2_FAILED" — this referral no longer matches the ear's current pathway position. Check for a newer referral on this ear.`,
++            error: `Ear is in state "${currentState}", not "SCREEN_2_FAILED" or "PENDING_MEDICAL_CLEARANCE_PRESCREEN" — this referral no longer matches the ear's current pathway position. Check for a newer referral on this ear.`,
+           },
+           { status: 422 }
+         );
+@@ -166,7 +175,9 @@ export async function PATCH(
+     const message = transition
+       ? transition.nextState === "CLEARED_FOR_RESCREEN"
+         ? `Referral resolved (${d.status}) — ${referral.ear.toLowerCase()} ear cleared for rescreen.`
+-        : `Referral marked ${d.status} — no-show logged, HCP notification series resumed. Ear remains at Screen 2 failed pending follow-up.`
++        : transition.nextState === "NOT_STARTED"
++          ? `Referral resolved (${d.status}) — ${referral.ear.toLowerCase()} ear cleared. Screen 1 can now be recorded.`
++          : `Referral marked ${d.status} — no-show logged, HCP notification series resumed. Ear remains at ${currentState === "PENDING_MEDICAL_CLEARANCE_PRESCREEN" ? "pre-screening referral" : "Screen 2 failed"} pending follow-up.`
+       : `Referral marked ${d.status}.`;
+ 
+     return NextResponse.json({ referral: result, next_state: transition?.nextState ?? null, message });
+diff --git a/my-app/components/children/EarStateCard.tsx b/my-app/components/children/EarStateCard.tsx
+index d1c7f4c..153728c 100644
+--- a/my-app/components/children/EarStateCard.tsx
++++ b/my-app/components/children/EarStateCard.tsx
+@@ -15,6 +15,8 @@ interface EarStateCardProps {
+   state: EarStateValue;
+   modality: string;
+   patientId: string;
++  /** Whether a visual inspection has been recorded for this ear (§2.1). */
++  hasVisualInspection: boolean;
+ }
+ 
+ const EAR_ICONS = {
+@@ -30,10 +32,15 @@ const EAR_ICONS = {
+   ),
+ };
+ 
+-export function EarStateCard({ ear, state, modality, patientId }: EarStateCardProps) {
++export function EarStateCard({ ear, state, modality, patientId, hasVisualInspection }: EarStateCardProps) {
+   const resolved = isEarResolved(state);
+   const expectedStage = getExpectedStage(state);
+-  const canAddScreening = expectedStage !== null;
++  // Screen 1 cannot be recorded until the pre-OAE visual inspection (§2.1)
++  // has been done — guardVisualInspection/guardScreening enforce this
++  // server-side too; this just keeps the button honest.
++  const needsVisualInspectionFirst =
++    state === 'NOT_STARTED' && !hasVisualInspection;
++  const canAddScreening = expectedStage !== null && !needsVisualInspectionFirst;
+ 
+   return (
+     <div
+@@ -71,6 +78,16 @@ export function EarStateCard({ ear, state, modality, patientId }: EarStateCardPr
+           <p className="text-sm text-emerald-700 font-medium">
+             ✓ Ear resolved — no further action needed
+           </p>
++        ) : needsVisualInspectionFirst ? (
++          <Link
++            href={`/children/${patientId}/visual-inspection/new?ear=${ear}`}
++            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
++          >
++            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
++              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
++            </svg>
++            Record Visual Inspection
++          </Link>
+         ) : canAddScreening ? (
+           <Link
+             href={`/children/${patientId}/screenings/new?ear=${ear}&stage=${expectedStage}`}
+@@ -87,13 +104,15 @@ export function EarStateCard({ ear, state, modality, patientId }: EarStateCardPr
+               ? 'Awaiting diagnostic evaluation'
+               : state === 'SCREEN_2_FAILED'
+                 ? 'Awaiting HCP referral resolution'
+-                : state === 'PENDING_LTFU'
+-                  ? 'Pending LTFU review by supervisor'
+-                  : state === 'LOST_TO_FOLLOWUP'
+-                    ? 'Case closed — lost to follow-up'
+-                    : state === 'DIAGNOSED'
+-                      ? 'Diagnostic evaluation complete'
+-                      : 'No action available in current state'}
++                : state === 'PENDING_MEDICAL_CLEARANCE_PRESCREEN'
++                  ? 'Visual inspection flagged this ear — awaiting HCP referral resolution before screening can begin'
++                  : state === 'PENDING_LTFU'
++                    ? 'Pending LTFU review by supervisor'
++                    : state === 'LOST_TO_FOLLOWUP'
++                      ? 'Case closed — lost to follow-up'
++                      : state === 'DIAGNOSED'
++                        ? 'Diagnostic evaluation complete'
++                        : 'No action available in current state'}
+           </p>
+         )}
+       </div>
+diff --git a/my-app/lib/pathway/engine.test.ts b/my-app/lib/pathway/engine.test.ts
+index e1b3d28..cc025c4 100644
+--- a/my-app/lib/pathway/engine.test.ts
++++ b/my-app/lib/pathway/engine.test.ts
+@@ -8,6 +8,7 @@ import {
+   assignModality,
+   derivePatientStatus,
+   guardScreening,
++  guardVisualInspection,
+ } from "./engine";
+ import type { SideEffect } from "./types";
+ 
+@@ -301,3 +302,82 @@ describe("derivePatientStatus", () => {
+     expect(derivePatientStatus("SCREEN_1_FAILED", "NOT_STARTED")).toBe("IN_PROGRESS");
+   });
+ });
++
++// ---------------------------------------------------------------------------
++// §2.1 — Visual inspection and case history (pre-OAE)
++// ---------------------------------------------------------------------------
++describe("guardVisualInspection", () => {
++  it("allows visual inspection from NOT_STARTED", () => {
++    expect(guardVisualInspection("NOT_STARTED")).toBeNull();
++  });
++
++  it("blocks a second visual inspection once referred for clearance", () => {
++    expect(guardVisualInspection("PENDING_MEDICAL_CLEARANCE_PRESCREEN")).not.toBeNull();
++  });
++
++  it("blocks visual inspection once Screen 1 has already been recorded", () => {
++    expect(guardVisualInspection("SCREEN_1_PASSED")).not.toBeNull();
++    expect(guardVisualInspection("SCREEN_1_FAILED")).not.toBeNull();
++  });
++});
++
++describe("transitionEarState — VISUAL_INSPECTION_SAVED", () => {
++  it("PASS keeps the ear at NOT_STARTED, ready for Screen 1", () => {
++    const t = transitionEarState("NOT_STARTED", {
++      type: "VISUAL_INSPECTION_SAVED",
++      outcome: "PASS",
++    });
++    expect(t.nextState).toBe("NOT_STARTED");
++  });
++
++  it("MINOR_ANOMALY proceeds to screening but logs a note", () => {
++    const t = transitionEarState("NOT_STARTED", {
++      type: "VISUAL_INSPECTION_SAVED",
++      outcome: "MINOR_ANOMALY",
++    });
++    expect(t.nextState).toBe("NOT_STARTED");
++    expect(hasEffect(t.sideEffects, "LOG_VISUAL_INSPECTION_NOTE")).toBe(true);
++  });
++
++  it("PE_TUBE proceeds to screening and logs an equipment note", () => {
++    const t = transitionEarState("NOT_STARTED", {
++      type: "VISUAL_INSPECTION_SAVED",
++      outcome: "PE_TUBE",
++    });
++    expect(t.nextState).toBe("NOT_STARTED");
++    expect(hasEffect(t.sideEffects, "LOG_VISUAL_INSPECTION_NOTE")).toBe(true);
++  });
++
++  it("REFER_MEDICAL blocks screening and creates an HCP referral", () => {
++    const t = transitionEarState("NOT_STARTED", {
++      type: "VISUAL_INSPECTION_SAVED",
++      outcome: "REFER_MEDICAL",
++    });
++    expect(t.nextState).toBe("PENDING_MEDICAL_CLEARANCE_PRESCREEN");
++    expect(hasEffect(t.sideEffects, "AUTO_CREATE_HCP_REFERRAL_PRESCREEN")).toBe(true);
++  });
++});
++
++describe("guardScreening — blocked by pre-screening visual inspection referral", () => {
++  it("Screen 1 cannot be saved while awaiting medical clearance", () => {
++    expect(guardScreening("PENDING_MEDICAL_CLEARANCE_PRESCREEN", "SCREEN_1")).not.toBeNull();
++  });
++});
++
++describe("transitionEarState — REFERRAL_UPDATED from a visual-inspection referral", () => {
++  it("CLEARED unblocks Screen 1 (returns to NOT_STARTED, not CLEARED_FOR_RESCREEN)", () => {
++    const t = transitionEarState("PENDING_MEDICAL_CLEARANCE_PRESCREEN", {
++      type: "REFERRAL_UPDATED",
++      referralStatus: "CLEARED",
++    });
++    expect(t.nextState).toBe("NOT_STARTED");
++  });
++
++  it("NO_SHOW keeps the ear blocked pending medical clearance", () => {
++    const t = transitionEarState("PENDING_MEDICAL_CLEARANCE_PRESCREEN", {
++      type: "REFERRAL_UPDATED",
++      referralStatus: "NO_SHOW",
++    });
++    expect(t.nextState).toBe("PENDING_MEDICAL_CLEARANCE_PRESCREEN");
++  });
++});
+diff --git a/my-app/lib/pathway/engine.ts b/my-app/lib/pathway/engine.ts
+index b6aa154..a7de00f 100644
+--- a/my-app/lib/pathway/engine.ts
++++ b/my-app/lib/pathway/engine.ts
+@@ -20,6 +20,7 @@ import type {
+   ScreeningStage,
+   SideEffect,
+   StateTransitionResult,
++  VisualInspectionOutcome,
+ } from "./types";
+ 
+ // ═══════════════════════════════════════════════════════════════
+@@ -60,6 +61,7 @@ const RESOLVED_STATES: ReadonlySet<EarStateValue> = new Set([
+ 
+ const ACTIVE_STATES: ReadonlySet<EarStateValue> = new Set([
+   "NOT_STARTED",
++  "PENDING_MEDICAL_CLEARANCE_PRESCREEN",
+   "SCREEN_1_FAILED",
+   "SCREEN_2_FAILED",
+   "CLEARED_FOR_RESCREEN",
+@@ -88,12 +90,32 @@ export function isActiveState(state: EarStateValue): boolean {
+ // Returns null if allowed, or an error message string if blocked.
+ // ═══════════════════════════════════════════════════════════════
+ 
++/**
++ * §2.1 (visual inspection precondition) — the pre-OAE visual inspection
++ * must be recorded once, while the ear is still NOT_STARTED. If the ear
++ * has already been referred for medical clearance
++ * (PENDING_MEDICAL_CLEARANCE_PRESCREEN), a second visual inspection is
++ * not the right tool — that ear is unblocked via a REFERRAL_UPDATED
++ * event instead (see handleReferralUpdated).
++ */
++export function guardVisualInspection(
++  currentState: EarStateValue
++): string | null {
++  if (currentState !== "NOT_STARTED") {
++    return `Visual inspection cannot be saved for an ear in state "${currentState}". Expected "NOT_STARTED".`;
++  }
++  return null;
++}
++
+ export function guardScreening(
+   currentState: EarStateValue,
+   stage: ScreeningStage
+ ): string | null {
+   switch (stage) {
+     case "SCREEN_1":
++      if (currentState === "PENDING_MEDICAL_CLEARANCE_PRESCREEN") {
++        return `Screen 1 cannot be saved — this ear is awaiting medical clearance from the visual inspection referral. Resolve the referral first.`;
++      }
+       if (currentState !== "NOT_STARTED") {
+         return `Screen 1 cannot be saved for an ear in state "${currentState}". Expected "NOT_STARTED".`;
+       }
+@@ -132,6 +154,8 @@ export function getExpectedStage(
+   switch (currentState) {
+     case "NOT_STARTED":
+       return "SCREEN_1";
++    case "PENDING_MEDICAL_CLEARANCE_PRESCREEN":
++      return null;
+     case "SCREEN_1_FAILED":
+       return "SCREEN_2";
+     case "CLEARED_FOR_RESCREEN":
+@@ -151,6 +175,9 @@ export function transitionEarState(
+   event: PathwayEvent
+ ): StateTransitionResult {
+   switch (event.type) {
++    case "VISUAL_INSPECTION_SAVED":
++      return handleVisualInspectionSaved(currentState, event.outcome);
++
+     case "SCREENING_SAVED":
+       return handleScreeningSaved(
+         currentState,
+@@ -199,6 +226,58 @@ export function transitionEarState(
+ 
+ // ─── Internal handlers ───────────────────────────────────────
+ 
++// §2.1 — Visual Inspection and Case History (ECHO protocol p.2 table).
++// Runs once per ear, before Screen 1. Only REFER_MEDICAL blocks
++// screening; PASS, MINOR_ANOMALY, and PE_TUBE all proceed straight
++// to OAE screening (the ear stays NOT_STARTED).
++function handleVisualInspectionSaved(
++  currentState: EarStateValue,
++  outcome: VisualInspectionOutcome
++): StateTransitionResult {
++  if (currentState !== "NOT_STARTED") {
++    // Guarded upstream by guardVisualInspection; defensive no-op here.
++    return { nextState: currentState, sideEffects: [] };
++  }
++
++  switch (outcome) {
++    case "PASS":
++      return { nextState: "NOT_STARTED", sideEffects: [] };
++
++    case "MINOR_ANOMALY":
++      return {
++        nextState: "NOT_STARTED",
++        sideEffects: [
++          {
++            kind: "LOG_VISUAL_INSPECTION_NOTE",
++            message:
++              "Minor malformation noted on visual inspection (does not affect canal opening). Proceeding with OAE screening.",
++          },
++        ],
++      };
++
++    case "PE_TUBE":
++      return {
++        nextState: "NOT_STARTED",
++        sideEffects: [
++          {
++            kind: "LOG_VISUAL_INSPECTION_NOTE",
++            message:
++              "PE tube present. Adjust screening equipment if required, then proceed with OAE screening.",
++          },
++        ],
++      };
++
++    case "REFER_MEDICAL":
++      return {
++        nextState: "PENDING_MEDICAL_CLEARANCE_PRESCREEN",
++        sideEffects: [
++          { kind: "AUTO_CREATE_HCP_REFERRAL_PRESCREEN" },
++          { kind: "SCHEDULE_PRESCREEN_HCP_REFERRAL_NOTIFICATIONS" },
++        ],
++      };
++  }
++}
++
+ function handleScreeningSaved(
+   currentState: EarStateValue,
+   stage: ScreeningStage,
+@@ -288,7 +367,31 @@ function handleReferralUpdated(
+   currentState: EarStateValue,
+   referralStatus: "CLEARED" | "TREATED" | "SEEN" | "NO_SHOW"
+ ): StateTransitionResult {
+-  // Referral updates are only valid from SCREEN_2_FAILED
++  // §2.1 — Referral from a failed VISUAL INSPECTION (pre-screening).
++  // Resolving it unblocks Screen 1 directly; it does NOT go through
++  // CLEARED_FOR_RESCREEN, which is reserved for referrals raised
++  // after a failed OAE screening (§17.3).
++  if (currentState === "PENDING_MEDICAL_CLEARANCE_PRESCREEN") {
++    if (referralStatus === "NO_SHOW") {
++      return {
++        nextState: "PENDING_MEDICAL_CLEARANCE_PRESCREEN",
++        sideEffects: [
++          { kind: "LOG_NO_SHOW_EVENT" },
++          { kind: "RESUME_HCP_NOTIFICATION_SERIES" },
++        ],
++      };
++    }
++    // CLEARED, TREATED, or SEEN (PE tube placed) — the blockage,
++    // infection, or malformation flagged at visual inspection has
++    // been resolved; OAE screening (Screen 1) can now proceed.
++    return {
++      nextState: "NOT_STARTED",
++      sideEffects: [{ kind: "CANCEL_PRESCREEN_HCP_NOTIFICATION_SERIES" }],
++    };
++  }
++
++  // Referral updates for post-screening referrals are only valid from
++  // SCREEN_2_FAILED
+   if (currentState !== "SCREEN_2_FAILED") {
+     return { nextState: currentState, sideEffects: [] };
+   }
+@@ -444,6 +547,7 @@ export function isPathwayComplete(
+ 
+ const EAR_STATE_LABELS: Record<EarStateValue, string> = {
+   NOT_STARTED: "Not Started",
++  PENDING_MEDICAL_CLEARANCE_PRESCREEN: "Awaiting Medical Clearance (Pre-Screening)",
+   SCREEN_1_PASSED: "Screen 1 — Passed",
+   SCREEN_1_FAILED: "Screen 1 — Not Passed",
+   SCREEN_2_PASSED: "Screen 2 — Passed",
+diff --git a/my-app/lib/pathway/types.ts b/my-app/lib/pathway/types.ts
+index 646d684..dadc0ac 100644
+--- a/my-app/lib/pathway/types.ts
++++ b/my-app/lib/pathway/types.ts
+@@ -15,12 +15,23 @@ export type Ear = "LEFT" | "RIGHT";
+ export type ScreeningResult = "PASS" | "NOT_PASS" | "INCOMPLETE";
+ export type ScreeningStage = "SCREEN_1" | "SCREEN_2" | "RESCREEN_POST_REFERRAL";
+ 
++/**
++ * Outcome of the pre-OAE "Visual Inspection and Case History" step
++ * (ECHO protocol p.2). Must be recorded per ear before Screen 1.
++ */
++export type VisualInspectionOutcome =
++  | "PASS"
++  | "MINOR_ANOMALY"
++  | "PE_TUBE"
++  | "REFER_MEDICAL";
++
+ // ═══════════════════════════════════════════════════════════════
+ // EAR STATE
+ // ═══════════════════════════════════════════════════════════════
+ 
+ export type EarStateValue =
+   | "NOT_STARTED"
++  | "PENDING_MEDICAL_CLEARANCE_PRESCREEN"
+   | "SCREEN_1_PASSED"
+   | "SCREEN_1_FAILED"
+   | "SCREEN_2_PASSED"
+@@ -57,6 +68,10 @@ export type PatientPathwayStatus =
+ // ═══════════════════════════════════════════════════════════════
+ 
+ export type PathwayEvent =
++  | {
++      type: "VISUAL_INSPECTION_SAVED";
++      outcome: VisualInspectionOutcome;
++    }
+   | {
+       type: "SCREENING_SAVED";
+       stage: ScreeningStage;
+@@ -96,6 +111,10 @@ export type PathwayEvent =
+ export type SideEffect =
+   | { kind: "RECOMPUTE_MILESTONES" }
+   | { kind: "MARK_EAR_RESOLVED" }
++  | { kind: "LOG_VISUAL_INSPECTION_NOTE"; message: string }
++  | { kind: "AUTO_CREATE_HCP_REFERRAL_PRESCREEN" }
++  | { kind: "SCHEDULE_PRESCREEN_HCP_REFERRAL_NOTIFICATIONS" }
++  | { kind: "CANCEL_PRESCREEN_HCP_NOTIFICATION_SERIES" }
+   | { kind: "SCHEDULE_SCREEN2_NOTIFICATIONS" }
+   | { kind: "SCHEDULE_HCP_REFERRAL_NOTIFICATIONS" }
+   | { kind: "AUTO_CREATE_HCP_REFERRAL" }
+diff --git a/my-app/lib/validation/schemas.ts b/my-app/lib/validation/schemas.ts
+index 2f1bdd4..c5ae4b6 100644
+--- a/my-app/lib/validation/schemas.ts
++++ b/my-app/lib/validation/schemas.ts
+@@ -18,6 +18,7 @@ export const ScreeningModalitySchema = z.enum(["OAE", "AABR"]);
+ export const ProbeFitQualitySchema = z.enum(["Good", "Fair", "Poor"]);
+ export const AmbientNoiseLevelSchema = z.enum(["Low", "Medium", "High"]);
+ export const ScreeningResultSchema = z.enum(["PASS", "NOT_PASS", "INCOMPLETE"]);
++export const VisualInspectionOutcomeSchema = z.enum(["PASS", "MINOR_ANOMALY", "PE_TUBE", "REFER_MEDICAL"]);
+ export const ReferralTypeSchema = z.enum(["HEALTH_CARE_PROVIDER", "AUDIOLOGIST"]);
+ export const DiagnosisAtReferralSchema = z.enum(["Otitis_media", "Blockage", "Infection", "Clear", "Other"]);
+ export const ReferralStatusSchema = z.enum(["PENDING", "CLEARED", "TREATED", "NO_SHOW", "SEEN"]);
+@@ -124,6 +125,24 @@ export const PatientListQuerySchema = z.object({
+   date_to: z.string().optional(),
+ });
+ 
++// ---------------------------------------------------------------------------
++// Visual inspection (§2.1 — pre-OAE "Visual Inspection and Case History")
++// ---------------------------------------------------------------------------
++
++export const VisualInspectionCreateSchema = z.object({
++  ear: EarSchema,
++  outcome: VisualInspectionOutcomeSchema,
++  finding_note: z.string().max(1000).nullable().optional(),
++  screener_id: z.string().uuid(),
++  inspected_at: z.string().datetime(),
++  entry_source: EntrySourceSchema.default("LIVE"),
++}).refine(
++  (d) => d.outcome !== "REFER_MEDICAL" || (d.finding_note && d.finding_note.length > 0),
++  { message: "finding_note is required when outcome is REFER_MEDICAL", path: ["finding_note"] }
++);
++
++export type VisualInspectionCreateInput = z.infer<typeof VisualInspectionCreateSchema>;
++
+ // ---------------------------------------------------------------------------
+ // Screening event (§16.5)
+ // ---------------------------------------------------------------------------
+diff --git a/my-app/prisma/migrations/20260721000000_add_visual_inspection/migration.sql b/my-app/prisma/migrations/20260721000000_add_visual_inspection/migration.sql
+new file mode 100644
+index 0000000..baba385
+--- /dev/null
++++ b/my-app/prisma/migrations/20260721000000_add_visual_inspection/migration.sql
+@@ -0,0 +1,31 @@
++-- CreateEnum
++CREATE TYPE "VisualInspectionOutcome" AS ENUM ('PASS', 'MINOR_ANOMALY', 'PE_TUBE', 'REFER_MEDICAL');
++
++-- CreateTable
++CREATE TABLE "visual_inspections" (
++    "id" UUID NOT NULL,
++    "patient_id" UUID NOT NULL,
++    "ear" "Ear" NOT NULL,
++    "outcome" "VisualInspectionOutcome" NOT NULL,
++    "finding_note" TEXT,
++    "screener_id" UUID NOT NULL,
++    "inspected_at" TIMESTAMP(3) NOT NULL,
++    "recorded_at" TIMESTAMP(3) NOT NULL,
++    "entrySource" "EntrySource" NOT NULL DEFAULT 'LIVE',
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "createdById" UUID NOT NULL,
++
++    CONSTRAINT "visual_inspections_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateIndex
++CREATE INDEX "visual_inspections_patient_id_ear_idx" ON "visual_inspections"("patient_id", "ear");
++
++-- AddForeignKey
++ALTER TABLE "visual_inspections" ADD CONSTRAINT "visual_inspections_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patients"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "visual_inspections" ADD CONSTRAINT "visual_inspections_screener_id_fkey" FOREIGN KEY ("screener_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "visual_inspections" ADD CONSTRAINT "visual_inspections_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+diff --git a/my-app/prisma/schema.prisma b/my-app/prisma/schema.prisma
+index d3fc6bf..3c6ab39 100644
+--- a/my-app/prisma/schema.prisma
++++ b/my-app/prisma/schema.prisma
+@@ -90,6 +90,23 @@ enum ScreeningResult {
+   INCOMPLETE
+ }
+ 
++/// Outcome of the pre-OAE visual inspection / case history step (ECHO
++/// protocol p.2, "Visual Inspection and Case History" table). This step
++/// happens BEFORE any OAE screening and gates whether screening may
++/// proceed immediately or only after medical clearance.
++enum VisualInspectionOutcome {
++  /// Ear canal is clear — proceed with OAE screening.
++  PASS
++  /// Pits, skin tags, or other minimal malformation that does not affect
++  /// the canal opening — proceed with OAE, but note the abnormality.
++  MINOR_ANOMALY
++  /// PE tube present — adjust equipment if required, proceed with OAE.
++  PE_TUBE
++  /// Canal blockage, signs of infection, or a significant malformation —
++  /// OAE screening is BLOCKED until medical clearance is obtained.
++  REFER_MEDICAL
++}
++
+ enum ReferralType {
+   HEALTH_CARE_PROVIDER
+   AUDIOLOGIST
+@@ -290,6 +307,10 @@ model User {
+   referrals_created            Referral[]               @relation("ReferralCreator")
+   correction_requests_resolved CorrectionRequest[]      @relation("CorrectionResolver")
+ 
++  // Visual inspection (pre-OAE) relations
++  visual_inspections_screened  VisualInspection[]       @relation("VisualInspectionScreener")
++  visual_inspections_created   VisualInspection[]       @relation("VisualInspectionCreator")
++
+   @@map("users")
+ }
+ 
+@@ -375,6 +396,7 @@ model Patient {
+   site                  Site                 @relation("PatientSite", fields: [site_id], references: [id])
+   consent_record        ConsentRecord?
+   risk_factors          RiskFactor?
++  visual_inspections    VisualInspection[]
+   screening_events      ScreeningEvent[]
+   referrals             Referral[]
+   diagnostic_evaluations DiagnosticEvaluation[]
+@@ -447,6 +469,43 @@ model RiskFactor {
+   @@map("risk_factors")
+ }
+ 
++// ---------------------------------------------------------------------------
++// 4.35  visual_inspections
++// Pre-OAE "Visual Inspection and Case History" step (ECHO protocol p.2).
++// Must be recorded per ear BEFORE the first OAE screening can be saved —
++// enforced via guardVisualInspection / guardScreening in lib/pathway.
++// ---------------------------------------------------------------------------
++
++model VisualInspection {
++  id         String @id @default(uuid()) @db.Uuid
++  patient_id String @db.Uuid
++
++  /// Independent per ear — never combine
++  ear     Ear
++  outcome VisualInspectionOutcome
++
++  /// Free-text detail — e.g. "pit above tragus", "wax occlusion",
++  /// "PE tube left ear". Not coded; for clinical record only.
++  finding_note String?
++
++  screener_id String @db.Uuid
++
++  /// Auto-timestamp from system clock — not manually typed
++  inspected_at DateTime
++  recorded_at  DateTime
++
++  patient  Patient @relation(fields: [patient_id], references: [id])
++  screener User    @relation("VisualInspectionScreener", fields: [screener_id], references: [id])
++
++  entrySource EntrySource  @default(LIVE)
++  createdAt   DateTime     @default(now())
++  createdById String       @db.Uuid
++  createdBy   User         @relation("VisualInspectionCreator", fields: [createdById], references: [id])
++
++  @@index([patient_id, ear])
++  @@map("visual_inspections")
++}
++
+ // ---------------------------------------------------------------------------
+ // 4.4  screening_events
+ // ---------------------------------------------------------------------------
