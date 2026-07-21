@@ -3,43 +3,49 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useForm, FormProvider } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Ear } from 'lucide-react';
+import Input from '@/components/ui/Input';
+import Button from '@/components/ui/Button';
+import Alert from '@/components/ui/Alert';
+
+const LoginSchema = z.object({
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+});
+type LoginValues = z.infer<typeof LoginSchema>;
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('admin@test.com');
-  const [password, setPassword] = useState('Test1234!');
-  const [error, setError] = useState('');
-  const [testCode, setTestCode] = useState('');
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const methods = useForm<LoginValues>({
+    resolver: zodResolver(LoginSchema),
+    defaultValues: { email: '', password: '' },
+  });
+  const { handleSubmit } = methods;
+
+  const onSubmit = async (values: LoginValues) => {
     setError('');
-    setTestCode('');
     setLoading(true);
-
     try {
       const res = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(values),
       });
-
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
+      if (!res.ok) throw new Error(data.error || 'Login failed');
 
-      // ✅ FIX: Always include the code in the redirect
       if (data.test_code) {
-        // Redirect with both token AND code
         router.push(`/login/2fa?token=${data.temp_token}&code=${data.test_code}`);
       } else if (data.requires_2fa) {
-        // Regular TOTP flow (no test code)
         router.push(`/login/2fa?token=${data.temp_token}`);
       } else {
-        // Direct login (no 2FA)
         localStorage.setItem('access_token', data.access_token);
         localStorage.setItem('refresh_token', data.refresh_token);
         router.push('/dashboard');
@@ -52,57 +58,40 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
-        <h1 className="text-center text-3xl font-bold text-gray-900">
-          Mama Rachel EHDI
-        </h1>
-        <p className="text-center text-sm text-gray-600">
-          Newborn Hearing Screening System
-        </p>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-surface px-4">
+      <div className="w-full max-w-md space-y-6 p-8 rounded-2xl border border-gray-200 dark:border-surface-border bg-white dark:bg-surface-card shadow-sm">
+        <div className="text-center space-y-2">
+          {/* <div className="mx-auto w-9 h-9 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center">
+            <Ear className="text-accent" size={18} />
+          </div> */}
+          <h1 className="text-xl font-bold text-gray-900 dark:text-fg">EHDI</h1>
+          <p className="text-sm text-gray-500 dark:text-fg-muted">Newborn Hearing Screening System</p>
+        </div>
 
-        {error && (
-          <div className="text-red-600 text-sm bg-red-50 p-3 rounded-md">
-            {error}
-          </div>
-        )}
+        {error && <Alert variant="warning">{error}</Alert>}
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"
-                required
-              />
+        <FormProvider {...methods}>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            <Input id="email" label="Email" type="email" required autoComplete="username" />
+            <Input id="password" label="Password" type="password" required autoComplete="current-password" />
+
+            <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full">
+              {loading ? 'Signing in…' : 'Sign In'}
+            </Button>
+
+            <div className="text-center">
+              <a href="/login/reset" className="text-sm text-accent hover:underline">
+                Forgot your password?
+              </a>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"
-                required
-              />
-            </div>
-          </div>
+          </form>
+        </FormProvider>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
-
-          <div className="text-center text-sm text-gray-500">
-            Test: admin@test.com / Test1234!
-          </div>
-        </form>
+        {/* {process.env.NODE_ENV !== 'production' && (
+          <p className="text-center text-xs text-gray-400 dark:text-fg-muted/60 border-t border-gray-100 dark:border-surface-border pt-3">
+            Dev only: admin@test.com / Test1234!
+          </p>
+        )} */}
       </div>
     </div>
   );

@@ -1,14 +1,18 @@
-'use client';
 // app/(auth)/login/2fa/page.tsx
+'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ShieldCheck } from 'lucide-react';
+import Button from '@/components/ui/Button';
+import Alert from '@/components/ui/Alert';
 
 export default function TwoFactorPage() {
   const [code, setCode]         = useState('');
   const [testCode, setTestCode] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const [mounted, setMounted]   = useState(false);
   const inputRef                = useRef<HTMLInputElement>(null);
   const router                  = useRouter();
   const searchParams            = useSearchParams();
@@ -22,6 +26,11 @@ export default function TwoFactorPage() {
     inputRef.current?.focus();
   }, [tempToken, codeFromUrl, router]);
 
+  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    if (mounted && codeFromUrl) setCode(codeFromUrl);
+  }, [mounted, codeFromUrl]);
+
   const submit = async (submittedCode: string) => {
     if (loading || submittedCode.length !== 6) return;
     setError('');
@@ -34,14 +43,12 @@ export default function TwoFactorPage() {
         body:    JSON.stringify({ temp_token: tempToken, code: submittedCode }),
       });
 
-      // Guard against empty body before parsing JSON
       const text = await res.text();
       if (!text) throw new Error('Empty response from server');
       const data = JSON.parse(text);
 
       if (!res.ok) throw new Error(data.error || '2FA verification failed');
 
-      // Store access token in cookie so middleware.ts can read it
       document.cookie = [
         `access_token=${data.access_token}`,
         'path=/',
@@ -68,56 +75,43 @@ export default function TwoFactorPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, '').slice(0, 6);
     setCode(val);
-    // Auto-submit when 6 digits typed (not from URL auto-fill)
     if (val.length === 6 && !codeFromUrl) submit(val);
   };
-
-  // Fill from URL code only after component is fully mounted — avoids hydration mismatch
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-  useEffect(() => {
-    if (mounted && codeFromUrl) {
-      setCode(codeFromUrl);
-    }
-  }, [mounted, codeFromUrl]);
 
   if (!tempToken) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
-        <div>
-          <h1 className="text-center text-2xl font-bold text-gray-900">
-            Two-Factor Authentication
-          </h1>
-          <p className="mt-2 text-center text-sm text-gray-600">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-surface px-4">
+      <div className="w-full max-w-md space-y-6 p-8 rounded-2xl border border-gray-200 dark:border-surface-border bg-white dark:bg-surface-card shadow-sm">
+        <div className="text-center space-y-2">
+          <div className="mx-auto w-9 h-9 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center">
+            <ShieldCheck className="text-accent" size={18} />
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-fg">Two-Factor Authentication</h1>
+          <p className="text-sm text-gray-500 dark:text-fg-muted">
             {testCode
               ? 'A verification code has been generated for you'
               : 'Enter the code from your authenticator app'}
           </p>
         </div>
 
-        {/* Test mode banner — disappears when TWO_FACTOR_DELIVERY != test */}
         {mounted && testCode && (
-          <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">
-              ⚠ Development mode
-            </p>
-            <p className="text-sm text-gray-600 text-center mb-2">Your verification code:</p>
-            <p className="text-3xl font-bold text-center text-amber-800 tracking-[0.3em]">
+          <Alert variant="warning">
+            <p className="text-xs font-semibold uppercase tracking-wide mb-1">Development mode</p>
+            <p className="mb-2">Your verification code:</p>
+            <p className="text-2xl font-bold text-center tracking-[0.3em] font-mono text-gray-900 dark:text-fg">
               {testCode}
             </p>
-            <p className="text-xs text-center text-gray-500 mt-2">
-              In production this will be sent via SMS, WhatsApp, or email.
-              <br />
-              Set <code className="bg-gray-100 px-1 rounded">TWO_FACTOR_DELIVERY=sms</code> in .env to switch.
+            <p className="text-xs mt-2">
+              In production this is sent via SMS, WhatsApp, or email. Set{' '}
+              <code className="bg-black/5 dark:bg-white/10 px-1 rounded">TWO_FACTOR_DELIVERY=sms</code> in .env to switch.
             </p>
-          </div>
+          </Alert>
         )}
 
-        <form className="mt-4 space-y-6" onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="code" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="code" className="block text-sm font-medium text-gray-700 dark:text-fg">
               Verification Code
             </label>
             <input
@@ -129,35 +123,32 @@ export default function TwoFactorPage() {
               value={code}
               onChange={handleChange}
               placeholder="000000"
-              className="mt-1 w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm
-                         focus:outline-none focus:ring-2 focus:ring-blue-500
-                         text-center text-2xl tracking-[0.4em] font-mono"
               maxLength={6}
               required
+              className="mt-1.5 w-full px-3.5 py-3 rounded-lg text-center text-2xl tracking-[0.4em] font-mono
+                         border border-gray-300 dark:border-surface-border bg-white dark:bg-surface-card
+                         text-gray-900 dark:text-fg
+                         focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
             />
           </div>
 
-          {error && (
-            <div className="text-red-700 text-sm bg-red-50 border border-red-200 p-3 rounded-md">
-              {error}
-            </div>
-          )}
+          {error && <Alert variant="warning">{error}</Alert>}
 
-          <button
+          <Button
             type="submit"
-            disabled={loading || code.length < 6}
-            className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md
-                       hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
-                       transition-colors"
+            variant="primary"
+            size="lg"
+            loading={loading}
+            disabled={code.length < 6}
+            className="w-full"
           >
             {loading ? 'Verifying…' : 'Verify & Continue'}
-          </button>
+          </Button>
 
-          <div className="text-center text-sm">
-            <button type="button" className="text-blue-600 hover:underline"
-              onClick={() => router.push('/login')}>
+          <div className="text-center">
+            <Button type="button" variant="ghost" size="sm" onClick={() => router.push('/login')}>
               ← Back to login
-            </button>
+            </Button>
           </div>
         </form>
       </div>
