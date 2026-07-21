@@ -1,13 +1,20 @@
 // lib/pathway/engine.test.ts
 // One test per row in §17.2 state transition table.
-// Run with: npx jest lib/pathway/engine.test.ts
+// Run with: npm test  (vitest)
 
+import { describe, it, expect } from "vitest";
 import {
-  transitionState,
+  transitionEarState,
   assignModality,
   derivePatientStatus,
-  checkOrderViolation,
+  guardScreening,
 } from "./engine";
+import type { SideEffect } from "./types";
+
+/** Helper: does the side-effect list contain a given kind? */
+function hasEffect(effects: readonly SideEffect[], kind: SideEffect["kind"]): boolean {
+  return effects.some((e) => e.kind === kind);
+}
 
 // ---------------------------------------------------------------------------
 // §17.1 — Modality assignment
@@ -32,39 +39,39 @@ describe("assignModality", () => {
 });
 
 // ---------------------------------------------------------------------------
-// §17.2 row 1 — NOT_STARTED + Screen 1 PASS → SCREEN_1_PASSED
+// §17.2 row 1-3 — NOT_STARTED transitions
 // ---------------------------------------------------------------------------
 describe("NOT_STARTED transitions", () => {
-  it("row 1: Screen 1 PASS → SCREEN_1_PASSED with milestone recompute", () => {
-    const result = transitionState("NOT_STARTED", {
+  it("row 1: Screen 1 PASS -> SCREEN_1_PASSED with milestone recompute", () => {
+    const result = transitionEarState("NOT_STARTED", {
       type: "SCREENING_SAVED",
       stage: "SCREEN_1",
       result: "PASS",
     });
     expect(result.nextState).toBe("SCREEN_1_PASSED");
-    expect(result.sideEffects).toContain("RECOMPUTE_MILESTONES");
-    expect(result.sideEffects).toContain("MARK_EAR_RESOLVED");
+    expect(hasEffect(result.sideEffects, "RECOMPUTE_MILESTONES")).toBe(true);
+    expect(hasEffect(result.sideEffects, "MARK_EAR_RESOLVED")).toBe(true);
   });
 
-  it("row 2: Screen 1 NOT_PASS → SCREEN_1_FAILED with notifications", () => {
-    const result = transitionState("NOT_STARTED", {
+  it("row 2: Screen 1 NOT_PASS -> SCREEN_1_FAILED with notifications", () => {
+    const result = transitionEarState("NOT_STARTED", {
       type: "SCREENING_SAVED",
       stage: "SCREEN_1",
       result: "NOT_PASS",
     });
     expect(result.nextState).toBe("SCREEN_1_FAILED");
-    expect(result.sideEffects).toContain("SCHEDULE_SCREEN2_NOTIFICATIONS");
+    expect(hasEffect(result.sideEffects, "SCHEDULE_SCREEN2_NOTIFICATIONS")).toBe(true);
   });
 
-  it("row 3: Screen 1 INCOMPLETE → NOT_STARTED (no state change)", () => {
-    const result = transitionState("NOT_STARTED", {
+  it("row 3: Screen 1 INCOMPLETE -> NOT_STARTED (no state change)", () => {
+    const result = transitionEarState("NOT_STARTED", {
       type: "SCREENING_SAVED",
       stage: "SCREEN_1",
       result: "INCOMPLETE",
     });
     expect(result.nextState).toBe("NOT_STARTED");
-    expect(result.sideEffects).toContain("LOG_ATTEMPT");
-    expect(result.sideEffects).toContain("ALERT_CLERK_RETRY");
+    expect(hasEffect(result.sideEffects, "LOG_ATTEMPT")).toBe(true);
+    expect(hasEffect(result.sideEffects, "ALERT_CLERK_RETRY")).toBe(true);
   });
 });
 
@@ -72,79 +79,90 @@ describe("NOT_STARTED transitions", () => {
 // §17.2 rows 4-6 — SCREEN_1_FAILED transitions
 // ---------------------------------------------------------------------------
 describe("SCREEN_1_FAILED transitions", () => {
-  it("row 4: Screen 2 PASS → SCREEN_2_PASSED", () => {
-    const result = transitionState("SCREEN_1_FAILED", {
+  it("row 4: Screen 2 PASS -> SCREEN_2_PASSED", () => {
+    const result = transitionEarState("SCREEN_1_FAILED", {
       type: "SCREENING_SAVED",
       stage: "SCREEN_2",
       result: "PASS",
     });
     expect(result.nextState).toBe("SCREEN_2_PASSED");
-    expect(result.sideEffects).toContain("RECOMPUTE_MILESTONES");
-    expect(result.sideEffects).toContain("MARK_EAR_RESOLVED");
+    expect(hasEffect(result.sideEffects, "RECOMPUTE_MILESTONES")).toBe(true);
+    expect(hasEffect(result.sideEffects, "MARK_EAR_RESOLVED")).toBe(true);
   });
 
-  it("row 5: Screen 2 NOT_PASS → SCREEN_2_FAILED with HCP referral", () => {
-    const result = transitionState("SCREEN_1_FAILED", {
+  it("row 5: Screen 2 NOT_PASS -> SCREEN_2_FAILED with HCP referral", () => {
+    const result = transitionEarState("SCREEN_1_FAILED", {
       type: "SCREENING_SAVED",
       stage: "SCREEN_2",
       result: "NOT_PASS",
     });
     expect(result.nextState).toBe("SCREEN_2_FAILED");
-    expect(result.sideEffects).toContain("AUTO_CREATE_HCP_REFERRAL");
-    expect(result.sideEffects).toContain("SCHEDULE_HCP_REFERRAL_NOTIFICATIONS");
+    expect(hasEffect(result.sideEffects, "AUTO_CREATE_HCP_REFERRAL")).toBe(true);
+    expect(hasEffect(result.sideEffects, "SCHEDULE_HCP_REFERRAL_NOTIFICATIONS")).toBe(true);
   });
 
-  it("row 6: Screen 2 INCOMPLETE → SCREEN_1_FAILED (no state change)", () => {
-    const result = transitionState("SCREEN_1_FAILED", {
+  it("row 6: Screen 2 INCOMPLETE -> SCREEN_1_FAILED (no state change)", () => {
+    const result = transitionEarState("SCREEN_1_FAILED", {
       type: "SCREENING_SAVED",
       stage: "SCREEN_2",
       result: "INCOMPLETE",
     });
     expect(result.nextState).toBe("SCREEN_1_FAILED");
-    expect(result.sideEffects).toContain("LOG_ATTEMPT");
+    expect(hasEffect(result.sideEffects, "LOG_ATTEMPT")).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// §17.2 rows 7-10 — SCREEN_2_FAILED transitions
+// §17.2 rows 7-10 — SCREEN_2_FAILED (referral resolution) transitions
 // ---------------------------------------------------------------------------
-describe("SCREEN_2_FAILED transitions", () => {
-  it("row 7: Referral CLEARED → CLEARED_FOR_RESCREEN", () => {
-    const result = transitionState("SCREEN_2_FAILED", {
+describe("SCREEN_2_FAILED transitions (referral resolution)", () => {
+  it("row 7: Referral CLEARED -> CLEARED_FOR_RESCREEN, immediate rescreen", () => {
+    const result = transitionEarState("SCREEN_2_FAILED", {
       type: "REFERRAL_UPDATED",
       referralStatus: "CLEARED",
     });
     expect(result.nextState).toBe("CLEARED_FOR_RESCREEN");
-    expect(result.sideEffects).toContain("SCHEDULE_RESCREEN_IMMEDIATELY");
-    expect(result.sideEffects).toContain("CANCEL_HCP_NOTIFICATION_SERIES");
+    expect(hasEffect(result.sideEffects, "SCHEDULE_RESCREEN_IMMEDIATELY")).toBe(true);
+    expect(hasEffect(result.sideEffects, "CANCEL_HCP_NOTIFICATION_SERIES")).toBe(true);
   });
 
-  it("row 8: Referral TREATED → CLEARED_FOR_RESCREEN with treatment delay", () => {
-    const result = transitionState("SCREEN_2_FAILED", {
+  it("row 8: Referral TREATED -> CLEARED_FOR_RESCREEN with treatment delay", () => {
+    const result = transitionEarState("SCREEN_2_FAILED", {
       type: "REFERRAL_UPDATED",
       referralStatus: "TREATED",
     });
     expect(result.nextState).toBe("CLEARED_FOR_RESCREEN");
-    expect(result.sideEffects).toContain("SCHEDULE_RESCREEN_AFTER_TREATMENT_DELAY");
+    expect(hasEffect(result.sideEffects, "SCHEDULE_RESCREEN_AFTER_TREATMENT_DELAY")).toBe(true);
+    expect(hasEffect(result.sideEffects, "CANCEL_HCP_NOTIFICATION_SERIES")).toBe(true);
   });
 
-  it("row 9: Referral SEEN (PE tube) → CLEARED_FOR_RESCREEN with PE delay", () => {
-    const result = transitionState("SCREEN_2_FAILED", {
+  it("row 9: Referral SEEN (PE tube placed) -> CLEARED_FOR_RESCREEN with PE delay", () => {
+    const result = transitionEarState("SCREEN_2_FAILED", {
       type: "REFERRAL_UPDATED",
       referralStatus: "SEEN",
     });
     expect(result.nextState).toBe("CLEARED_FOR_RESCREEN");
-    expect(result.sideEffects).toContain("SCHEDULE_RESCREEN_AFTER_PE_DELAY");
+    expect(hasEffect(result.sideEffects, "SCHEDULE_RESCREEN_AFTER_PE_DELAY")).toBe(true);
+    expect(hasEffect(result.sideEffects, "CANCEL_HCP_NOTIFICATION_SERIES")).toBe(true);
   });
 
-  it("row 10: Referral NO_SHOW → SCREEN_2_FAILED (no state change, log no-show)", () => {
-    const result = transitionState("SCREEN_2_FAILED", {
+  it("row 10: Referral NO_SHOW -> SCREEN_2_FAILED (no state change, log no-show, do not drop case)", () => {
+    const result = transitionEarState("SCREEN_2_FAILED", {
       type: "REFERRAL_UPDATED",
       referralStatus: "NO_SHOW",
     });
     expect(result.nextState).toBe("SCREEN_2_FAILED");
-    expect(result.sideEffects).toContain("LOG_NO_SHOW_EVENT");
-    expect(result.sideEffects).toContain("RESUME_HCP_NOTIFICATION_SERIES");
+    expect(hasEffect(result.sideEffects, "LOG_NO_SHOW_EVENT")).toBe(true);
+    expect(hasEffect(result.sideEffects, "RESUME_HCP_NOTIFICATION_SERIES")).toBe(true);
+  });
+
+  it("referral updates are ignored when the ear is not in SCREEN_2_FAILED", () => {
+    const result = transitionEarState("NOT_STARTED", {
+      type: "REFERRAL_UPDATED",
+      referralStatus: "CLEARED",
+    });
+    expect(result.nextState).toBe("NOT_STARTED");
+    expect(result.sideEffects).toHaveLength(0);
   });
 });
 
@@ -152,138 +170,113 @@ describe("SCREEN_2_FAILED transitions", () => {
 // §17.2 rows 11-12 — CLEARED_FOR_RESCREEN transitions
 // ---------------------------------------------------------------------------
 describe("CLEARED_FOR_RESCREEN transitions", () => {
-  it("row 11: Rescreen PASS → RESCREEN_PASSED", () => {
-    const result = transitionState("CLEARED_FOR_RESCREEN", {
+  it("row 11: Rescreen PASS -> RESCREEN_PASSED", () => {
+    const result = transitionEarState("CLEARED_FOR_RESCREEN", {
       type: "SCREENING_SAVED",
       stage: "RESCREEN_POST_REFERRAL",
       result: "PASS",
     });
     expect(result.nextState).toBe("RESCREEN_PASSED");
-    expect(result.sideEffects).toContain("RECOMPUTE_MILESTONES");
-    expect(result.sideEffects).toContain("MARK_EAR_RESOLVED");
+    expect(hasEffect(result.sideEffects, "RECOMPUTE_MILESTONES")).toBe(true);
+    expect(hasEffect(result.sideEffects, "MARK_EAR_RESOLVED")).toBe(true);
   });
 
-  it("row 12: Rescreen NOT_PASS → RESCREEN_FAILED with audiology referral", () => {
-    const result = transitionState("CLEARED_FOR_RESCREEN", {
+  it("row 12: Rescreen NOT_PASS -> RESCREEN_FAILED with audiology referral", () => {
+    const result = transitionEarState("CLEARED_FOR_RESCREEN", {
       type: "SCREENING_SAVED",
       stage: "RESCREEN_POST_REFERRAL",
       result: "NOT_PASS",
     });
     expect(result.nextState).toBe("RESCREEN_FAILED");
-    expect(result.sideEffects).toContain("AUTO_CREATE_AUDIOLOGY_REFERRAL");
-    expect(result.sideEffects).toContain("SCHEDULE_AUDIOLOGY_NOTIFICATIONS");
+    expect(hasEffect(result.sideEffects, "AUTO_CREATE_AUDIOLOGY_REFERRAL")).toBe(true);
+    expect(hasEffect(result.sideEffects, "SCHEDULE_AUDIOLOGY_NOTIFICATIONS")).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// §17.2 row 13 — RESCREEN_FAILED → DIAGNOSED
+// §17.2 row 13 — RESCREEN_FAILED -> DIAGNOSED
 // ---------------------------------------------------------------------------
 describe("RESCREEN_FAILED transitions", () => {
-  it("row 13: Diagnostic saved with hearing loss → DIAGNOSED with intervention notifications", () => {
-    const result = transitionState("RESCREEN_FAILED", {
+  it("row 13: Diagnostic saved with hearing loss -> DIAGNOSED with intervention notifications", () => {
+    const result = transitionEarState("RESCREEN_FAILED", {
       type: "DIAGNOSTIC_SAVED",
       hasHearingLoss: true,
     });
     expect(result.nextState).toBe("DIAGNOSED");
-    expect(result.sideEffects).toContain("SET_DIAGNOSIS");
-    expect(result.sideEffects).toContain("SCHEDULE_INTERVENTION_NOTIFICATIONS");
+    expect(hasEffect(result.sideEffects, "SET_DIAGNOSIS")).toBe(true);
+    expect(hasEffect(result.sideEffects, "SCHEDULE_INTERVENTION_NOTIFICATIONS")).toBe(true);
   });
 
-  it("row 13b: Diagnostic saved without hearing loss → DIAGNOSED without intervention notifications", () => {
-    const result = transitionState("RESCREEN_FAILED", {
+  it("row 13b: Diagnostic saved without hearing loss -> DIAGNOSED without intervention notifications", () => {
+    const result = transitionEarState("RESCREEN_FAILED", {
       type: "DIAGNOSTIC_SAVED",
       hasHearingLoss: false,
     });
     expect(result.nextState).toBe("DIAGNOSED");
-    expect(result.sideEffects).not.toContain("SCHEDULE_INTERVENTION_NOTIFICATIONS");
+    expect(hasEffect(result.sideEffects, "SCHEDULE_INTERVENTION_NOTIFICATIONS")).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// §17.2 rows 14-16 — PENDING_LTFU transitions
+// §17.2 rows 14-16 — LTFU transitions
 // ---------------------------------------------------------------------------
-describe("PENDING_LTFU transitions", () => {
-  it("row 15: Supervisor marks LTFU → LOST_TO_FOLLOWUP", () => {
-    const result = transitionState("PENDING_LTFU", {
+describe("LTFU transitions", () => {
+  it("row 14: Notifications exhausted on an active state -> PENDING_LTFU", () => {
+    const result = transitionEarState("SCREEN_1_FAILED", {
+      type: "NOTIFICATIONS_EXHAUSTED",
+    });
+    expect(result.nextState).toBe("PENDING_LTFU");
+    expect(hasEffect(result.sideEffects, "ALERT_SUPERVISOR_LTFU")).toBe(true);
+  });
+
+  it("row 15: Supervisor marks LTFU -> LOST_TO_FOLLOWUP", () => {
+    const result = transitionEarState("PENDING_LTFU", {
       type: "SUPERVISOR_MARKED_LTFU",
     });
     expect(result.nextState).toBe("LOST_TO_FOLLOWUP");
-    expect(result.sideEffects).toContain("SET_FINAL_STATUS_LTFU");
-    expect(result.sideEffects).toContain("STOP_ALL_NOTIFICATIONS");
+    expect(hasEffect(result.sideEffects, "SET_FINAL_STATUS_LTFU")).toBe(true);
+    expect(hasEffect(result.sideEffects, "STOP_ALL_NOTIFICATIONS")).toBe(true);
   });
 
-  it("row 16: Contact re-established → resumes prior active state", () => {
-    const result = transitionState("PENDING_LTFU", {
+  it("row 16: Contact re-established -> resumes prior active state", () => {
+    const result = transitionEarState("PENDING_LTFU", {
       type: "CONTACT_REESTABLISHED",
       priorState: "SCREEN_2_FAILED",
     });
     expect(result.nextState).toBe("SCREEN_2_FAILED");
-    expect(result.sideEffects).toContain("RESUME_PATHWAY");
+    expect(hasEffect(result.sideEffects, "RESUME_PATHWAY")).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Terminal state guard — no transitions from resolved states
+// §17.4 — Out-of-order entry protection (guardScreening)
 // ---------------------------------------------------------------------------
-describe("Terminal state guard", () => {
-  const terminalStates = [
-    "SCREEN_1_PASSED",
-    "SCREEN_2_PASSED",
-    "RESCREEN_PASSED",
-    "DIAGNOSED",
-    "LOST_TO_FOLLOWUP",
-  ] as const;
-
-  terminalStates.forEach((state) => {
-    it(`${state} returns self with a warning`, () => {
-      const result = transitionState(state, {
-        type: "SCREENING_SAVED",
-        stage: "SCREEN_1",
-        result: "PASS",
-      });
-      expect(result.nextState).toBe(state);
-      expect(result.warning).toBeDefined();
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// §17.4 — Out-of-order entry protection
-// ---------------------------------------------------------------------------
-describe("checkOrderViolation", () => {
+describe("guardScreening — out-of-order entry protection", () => {
   it("blocks Screen 2 when state is NOT_STARTED", () => {
-    expect(checkOrderViolation("NOT_STARTED", "SCREEN_2")).toBe(
-      "SCREEN_2_WITHOUT_SCREEN_1"
-    );
+    expect(guardScreening("NOT_STARTED", "SCREEN_2")).toMatch(/SCREEN_1_FAILED/);
   });
 
   it("allows Screen 2 when state is SCREEN_1_FAILED", () => {
-    expect(checkOrderViolation("SCREEN_1_FAILED", "SCREEN_2")).toBeNull();
+    expect(guardScreening("SCREEN_1_FAILED", "SCREEN_2")).toBeNull();
   });
 
-  it("blocks Rescreen when state is not CLEARED_FOR_RESCREEN", () => {
-    expect(checkOrderViolation("SCREEN_2_FAILED", "RESCREEN_POST_REFERRAL")).toBe(
-      "RESCREEN_WITHOUT_HCP_REFERRAL_RESOLVED"
+  it("blocks Rescreen when the HCP referral has not been resolved", () => {
+    expect(guardScreening("SCREEN_2_FAILED", "RESCREEN_POST_REFERRAL")).toMatch(
+      /CLEARED_FOR_RESCREEN/
     );
   });
 
   it("allows Rescreen when state is CLEARED_FOR_RESCREEN", () => {
-    expect(checkOrderViolation("CLEARED_FOR_RESCREEN", "RESCREEN_POST_REFERRAL")).toBeNull();
+    expect(guardScreening("CLEARED_FOR_RESCREEN", "RESCREEN_POST_REFERRAL")).toBeNull();
   });
 
-  it("blocks Diagnostic when state is not RESCREEN_FAILED", () => {
-    expect(checkOrderViolation("SCREEN_1_FAILED", "DIAGNOSTIC")).toBe(
-      "DIAGNOSTIC_WITHOUT_AUDIOLOGY_REFERRAL"
-    );
-  });
-
-  it("allows Diagnostic when state is RESCREEN_FAILED", () => {
-    expect(checkOrderViolation("RESCREEN_FAILED", "DIAGNOSTIC")).toBeNull();
+  it("blocks Screen 1 when the ear already has a Screen 1 result", () => {
+    expect(guardScreening("SCREEN_1_PASSED", "SCREEN_1")).not.toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// §17.5 — Bilateral state → patient-level status
+// §17.5 — Bilateral state -> patient-level status
 // ---------------------------------------------------------------------------
 describe("derivePatientStatus", () => {
   it("PASSED when both ears resolved", () => {

@@ -313,14 +313,16 @@ function handleReferralUpdated(
       };
 
     case "SEEN":
-      // Patient was seen but no specific clinical outcome recorded yet.
-      // No state transition — stay in SCREEN_2_FAILED awaiting a
-      // definitive outcome (CLEARED / TREATED / NO_SHOW).
+      // "SEEN" represents the PE-tube-placement outcome (referral.pe_tube_placed
+      // = true at the DB layer — see §4.5 / §17.3). This is a resolving outcome,
+      // same as CLEARED/TREATED: it must clear the ear for rescreen using the
+      // PE-tube-specific delay window, not the otitis-media treatment delay.
       return {
-        nextState: "SCREEN_2_FAILED",
-        sideEffects: [],
-        warning:
-          "Referral marked SEEN but no clinical outcome (CLEARED/TREATED/NO_SHOW) recorded. Ear remains in SCREEN_2_FAILED.",
+        nextState: "CLEARED_FOR_RESCREEN",
+        sideEffects: [
+          { kind: "SCHEDULE_RESCREEN_AFTER_PE_DELAY" },
+          { kind: "CANCEL_HCP_NOTIFICATION_SERIES" },
+        ],
       };
 
     case "NO_SHOW":

@@ -6,10 +6,10 @@ import {
   getExpectedStage,
   derivePatientStatus,
   getModality,
-  type EarState,
+  type EarStateValue,
   type Ear,
 } from '@/lib/pathway';
-import { requireAuth, authErrResponse } from '@/lib/Auth/requireAuth';
+import { requireAuth, authErrResponse } from '@/lib/auth/requireAuth';
 
 /**
  * POST /api/v1/children/[id]/screenings
@@ -83,7 +83,7 @@ for (const ear of ears) {
     where: { patientId_ear: { patientId, ear } },
   });
 
-  const currentState: EarState = (earState?.state as EarState) ?? 'NOT_STARTED';
+  const currentState: EarStateValue = (earState?.state as EarStateValue) ?? 'NOT_STARTED';
 
   // ── Guard: out-of-order protection (§17.4) ──
   const stage = body.stage;
@@ -315,11 +315,11 @@ async function getEarState(
   prisma: typeof import('@/lib/prisma').prisma,
   patientId: string,
   ear: Ear
-): Promise<EarState> {
+): Promise<EarStateValue> {
   const eps = await prisma.earPathwayState.findUnique({
     where: { patientId_ear: { patientId, ear } },
   });
-  return (eps?.state as EarState) ?? 'NOT_STARTED';
+  return (eps?.state as EarStateValue) ?? 'NOT_STARTED';
 }
 
 function buildConfirmationMessage(

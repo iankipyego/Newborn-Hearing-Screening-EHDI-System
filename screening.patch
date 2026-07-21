@@ -1,0 +1,3309 @@
+diff --git a/my-app/app/(app)/referrals/[referralId]/edit/page.tsx b/my-app/app/(app)/referrals/[referralId]/edit/page.tsx
+index e69de29..2a692af 100644
+--- a/my-app/app/(app)/referrals/[referralId]/edit/page.tsx
++++ b/my-app/app/(app)/referrals/[referralId]/edit/page.tsx
+@@ -0,0 +1,316 @@
++// app/(app)/referrals/[referralId]/edit/page.tsx
++"use client";
++
++import { useState, useEffect, use } from "react";
++import { useRouter } from "next/navigation";
++
++interface ReferralDetail {
++  id: string;
++  ear: "LEFT" | "RIGHT";
++  type: "HEALTH_CARE_PROVIDER" | "AUDIOLOGIST";
++  reason: string;
++  provider_name: string;
++  facility: string;
++  status: string;
++  referred_at: string;
++  patient: {
++    id: string;
++    research_id: string | null;
++    mother_name: string | null;
++  };
++}
++
++type Outcome = "CLEARED" | "TREATED" | "SEEN" | "NO_SHOW";
++
++const OUTCOME_LABELS: Record<Outcome, string> = {
++  CLEARED: "Cleared — no issue found",
++  TREATED: "Treated — otitis media / middle ear fluid",
++  SEEN: "Seen — PE tube placed",
++  NO_SHOW: "No-show — family did not attend",
++};
++
++export default function ResolveReferralPage({
++  params,
++}: {
++  params: Promise<{ referralId: string }>;
++}) {
++  const { referralId } = use(params);
++  const router = useRouter();
++
++  const [referral, setReferral] = useState<ReferralDetail | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [submitting, setSubmitting] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [success, setSuccess] = useState<{ message: string } | null>(null);
++
++  const [outcome, setOutcome] = useState<Outcome | "">("");
++  const [providerName, setProviderName] = useState("");
++  const [facility, setFacility] = useState("");
++  const [diagnosisAtReferral, setDiagnosisAtReferral] = useState("");
++  const [treatmentGiven, setTreatmentGiven] = useState("");
++  const [medicalClearanceGiven, setMedicalClearanceGiven] = useState(false);
++
++  function authHeaders(): Record<string, string> {
++    const token = document.cookie
++      .split("; ")
++      .find((row) => row.startsWith("access_token="))
++      ?.split("=")[1];
++    return token ? { Authorization: `Bearer ${token}` } : {};
++  }
++
++  useEffect(() => {
++    async function load() {
++      try {
++        const res = await fetch(`/api/v1/referrals/${referralId}`, {
++          headers: authHeaders(),
++          cache: "no-store",
++        });
++        if (!res.ok) {
++          const body = await res.json().catch(() => ({}));
++          throw new Error(body.error ?? "Failed to load referral");
++        }
++        const data = await res.json();
++        setReferral(data.referral);
++        setProviderName(data.referral.provider_name ?? "");
++        setFacility(data.referral.facility ?? "");
++      } catch (err) {
++        setError(err instanceof Error ? err.message : "Failed to load");
++      } finally {
++        setLoading(false);
++      }
++    }
++    load();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [referralId]);
++
++  async function handleSubmit(e: React.FormEvent) {
++    e.preventDefault();
++    if (!outcome) return;
++    setSubmitting(true);
++    setError(null);
++
++    try {
++      const res = await fetch(`/api/v1/referrals/${referralId}`, {
++        method: "PATCH",
++        headers: { "Content-Type": "application/json", ...authHeaders() },
++        body: JSON.stringify({
++          status: outcome,
++          provider_name: providerName || undefined,
++          facility: facility || undefined,
++          diagnosis_at_referral: diagnosisAtReferral || undefined,
++          treatment_given: outcome === "TREATED" ? treatmentGiven || undefined : undefined,
++          medical_clearance_given: outcome === "CLEARED" ? medicalClearanceGiven : undefined,
++          pe_tube_placed: outcome === "SEEN" ? true : undefined,
++        }),
++      });
++      const data = await res.json();
++      if (!res.ok) {
++        setError(data.error ?? "Failed to resolve referral");
++        return;
++      }
++      setSuccess({ message: data.message });
++    } catch {
++      setError("Network error — please try again");
++    } finally {
++      setSubmitting(false);
++    }
++  }
++
++  if (loading) {
++    return (
++      <div className="flex items-center justify-center py-20">
++        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
++      </div>
++    );
++  }
++
++  if (error && !referral) {
++    return (
++      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
++        <div className="rounded-lg border border-red-200 bg-red-50 p-6">
++          <p className="text-red-700">{error}</p>
++          <button onClick={() => router.back()} className="mt-3 text-sm text-blue-600 hover:underline">
++            ← Back
++          </button>
++        </div>
++      </div>
++    );
++  }
++
++  if (success) {
++    return (
++      <div className="mx-auto max-w-2xl px-4 py-12">
++        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-8 text-center">
++          <h2 className="text-lg font-semibold text-emerald-900">Referral Resolved</h2>
++          <p className="mt-2 text-sm text-emerald-700">{success.message}</p>
++          <button
++            onClick={() => router.push(`/children/${referral?.patient.id}`)}
++            className="mt-6 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
++          >
++            Back to child profile
++          </button>
++        </div>
++      </div>
++    );
++  }
++
++  const isAudiology = referral?.type === "AUDIOLOGIST";
++
++  return (
++    <div className="mx-auto max-w-2xl px-4 py-8">
++      <button
++        onClick={() => router.push(`/children/${referral?.patient.id}`)}
++        className="mb-6 text-sm text-gray-500 hover:text-gray-700"
++      >
++        ← Back to {referral?.patient.research_id ?? "child profile"}
++      </button>
++
++      <div className="mb-6">
++        <h1 className="text-xl font-bold text-gray-900">Resolve Referral</h1>
++        <p className="mt-1 text-sm text-gray-500">
++          {referral?.ear === "LEFT" ? "Left" : "Right"} ear —{" "}
++          {referral?.type === "HEALTH_CARE_PROVIDER" ? "Health Care Provider" : "Audiologist"} —{" "}
++          {referral?.reason}
++        </p>
++      </div>
++
++      {isAudiology && (
++        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
++          This is an audiology referral — it resolves through a diagnostic evaluation, not a
++          status change here. Use "Add Diagnostic Evaluation" on the child profile instead.
++        </div>
++      )}
++
++      {error && (
++        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
++          {error}
++        </div>
++      )}
++
++      {!isAudiology && (
++        <form onSubmit={handleSubmit} className="space-y-6">
++          <fieldset>
++            <legend className="text-sm font-medium text-gray-700">Outcome</legend>
++            <p className="mt-0.5 text-xs text-gray-400">
++              What did the health care provider find or do?
++            </p>
++            <div className="mt-2 grid gap-2">
++              {(Object.keys(OUTCOME_LABELS) as Outcome[]).map((o) => (
++                <button
++                  key={o}
++                  type="button"
++                  onClick={() => setOutcome(o)}
++                  className={`rounded-lg border-2 px-4 py-3 text-left text-sm font-medium transition-colors ${
++                    outcome === o
++                      ? "border-blue-500 bg-blue-50 text-blue-800"
++                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
++                  }`}
++                >
++                  {OUTCOME_LABELS[o]}
++                </button>
++              ))}
++            </div>
++          </fieldset>
++
++          <div className="grid grid-cols-2 gap-4">
++            <div>
++              <label className="block text-sm font-medium text-gray-700">Provider name</label>
++              <input
++                type="text"
++                value={providerName}
++                onChange={(e) => setProviderName(e.target.value)}
++                className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++              />
++            </div>
++            <div>
++              <label className="block text-sm font-medium text-gray-700">Facility</label>
++              <input
++                type="text"
++                value={facility}
++                onChange={(e) => setFacility(e.target.value)}
++                className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++              />
++            </div>
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">
++              Diagnosis at referral
++            </label>
++            <select
++              value={diagnosisAtReferral}
++              onChange={(e) => setDiagnosisAtReferral(e.target.value)}
++              className="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++            >
++              <option value="">Select...</option>
++              <option value="Otitis_media">Otitis media</option>
++              <option value="Blockage">Blockage</option>
++              <option value="Infection">Infection</option>
++              <option value="Clear">Clear</option>
++              <option value="Other">Other</option>
++            </select>
++          </div>
++
++          {outcome === "TREATED" && (
++            <div>
++              <label className="block text-sm font-medium text-gray-700">Treatment given</label>
++              <input
++                type="text"
++                value={treatmentGiven}
++                onChange={(e) => setTreatmentGiven(e.target.value)}
++                placeholder="e.g. Amoxicillin, 10-day course"
++                className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++              />
++              <p className="mt-1 text-xs text-gray-400">
++                Rescreen will be scheduled after the treatment delay window.
++              </p>
++            </div>
++          )}
++
++          {outcome === "SEEN" && (
++            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
++              PE tube placement will be recorded. Rescreen will be scheduled after the PE-tube
++              delay window (shorter than the otitis-media treatment delay).
++            </div>
++          )}
++
++          {outcome === "CLEARED" && (
++            <label className="flex items-center gap-2 text-sm text-gray-700">
++              <input
++                type="checkbox"
++                checked={medicalClearanceGiven}
++                onChange={(e) => setMedicalClearanceGiven(e.target.checked)}
++                className="rounded border-gray-300"
++              />
++              Medical clearance given — proceed to rescreen immediately
++            </label>
++          )}
++
++          {outcome === "NO_SHOW" && (
++            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
++              This will be logged as a no-show — the case stays open and HCP-referral reminders
++              resume. It is not dropped.
++            </div>
++          )}
++
++          <div className="flex items-center gap-3 pt-2">
++            <button
++              type="submit"
++              disabled={!outcome || submitting}
++              className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
++            >
++              {submitting ? "Saving..." : "Resolve Referral"}
++            </button>
++            <button
++              type="button"
++              onClick={() => router.back()}
++              className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
++            >
++              Cancel
++            </button>
++          </div>
++        </form>
++      )}
++    </div>
++  );
++}
+diff --git a/my-app/app/(app)/screenings/[eventId]/edit/page.tsx b/my-app/app/(app)/screenings/[eventId]/edit/page.tsx
+index e69de29..0417fe5 100644
+--- a/my-app/app/(app)/screenings/[eventId]/edit/page.tsx
++++ b/my-app/app/(app)/screenings/[eventId]/edit/page.tsx
+@@ -0,0 +1,282 @@
++// app/(app)/screenings/[eventId]/edit/page.tsx
++//
++// Clerk-only correction window (48h) for non-clinical-outcome fields.
++// `result`, `ear`, `stage`, `modality` are NOT editable here — see
++// app/api/v1/screenings/[...route]/route.ts for why. Use "Flag for
++// Correction" for those.
++"use client";
++
++import { useState, useEffect, use } from "react";
++import { useRouter } from "next/navigation";
++import Link from "next/link";
++
++interface ScreeningEventDetail {
++  id: string;
++  ear: string;
++  stage: string;
++  modality: string;
++  result: string;
++  equipment_id: string | null;
++  probe_fit_quality: string | null;
++  ambient_noise_level: string;
++  attempts: number;
++  duration_minutes: number;
++  incomplete_reason: string | null;
++  clinicalComment: string | null;
++  recorded_at: string;
++  patient_id: string;
++}
++
++export default function EditScreeningPage({
++  params,
++}: {
++  params: Promise<{ eventId: string }>;
++}) {
++  const { eventId } = use(params);
++  const router = useRouter();
++
++  const [event, setEvent] = useState<ScreeningEventDetail | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [submitting, setSubmitting] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [success, setSuccess] = useState(false);
++
++  const [equipmentId, setEquipmentId] = useState("");
++  const [probeFitQuality, setProbeFitQuality] = useState("");
++  const [ambientNoiseLevel, setAmbientNoiseLevel] = useState("");
++  const [attempts, setAttempts] = useState(1);
++  const [durationMinutes, setDurationMinutes] = useState("");
++  const [clinicalComment, setClinicalComment] = useState("");
++
++  function authHeaders(): Record<string, string> {
++    const token = document.cookie
++      .split("; ")
++      .find((row) => row.startsWith("access_token="))
++      ?.split("=")[1];
++    return token ? { Authorization: `Bearer ${token}` } : {};
++  }
++
++  useEffect(() => {
++    async function load() {
++      try {
++        const res = await fetch(`/api/v1/screenings/${eventId}`, {
++          headers: authHeaders(),
++          cache: "no-store",
++        });
++        if (!res.ok) {
++          const body = await res.json().catch(() => ({}));
++          throw new Error(body.error ?? "Failed to load screening event");
++        }
++        const data = await res.json();
++        const ev: ScreeningEventDetail = data.screening ?? data;
++        setEvent(ev);
++        setEquipmentId(ev.equipment_id ?? "");
++        setProbeFitQuality(ev.probe_fit_quality ?? "");
++        setAmbientNoiseLevel(ev.ambient_noise_level ?? "");
++        setAttempts(ev.attempts ?? 1);
++        setDurationMinutes(String(ev.duration_minutes ?? ""));
++        setClinicalComment(ev.clinicalComment ?? "");
++      } catch (err) {
++        setError(err instanceof Error ? err.message : "Failed to load");
++      } finally {
++        setLoading(false);
++      }
++    }
++    load();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [eventId]);
++
++  async function handleSubmit(e: React.FormEvent) {
++    e.preventDefault();
++    setSubmitting(true);
++    setError(null);
++    try {
++      const res = await fetch(`/api/v1/screenings/${eventId}`, {
++        method: "PATCH",
++        headers: { "Content-Type": "application/json", ...authHeaders() },
++        body: JSON.stringify({
++          equipment_id: equipmentId,
++          probe_fit_quality: probeFitQuality || null,
++          ambient_noise_level: ambientNoiseLevel,
++          attempts,
++          duration_minutes: parseFloat(durationMinutes) || 0,
++          clinicalComment,
++        }),
++      });
++      const data = await res.json();
++      if (!res.ok) {
++        setError(data.error ?? "Failed to save changes");
++        return;
++      }
++      setSuccess(true);
++    } catch {
++      setError("Network error — please try again");
++    } finally {
++      setSubmitting(false);
++    }
++  }
++
++  if (loading) {
++    return (
++      <div className="flex items-center justify-center py-20">
++        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
++      </div>
++    );
++  }
++
++  if (error && !event) {
++    return (
++      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
++        <div className="rounded-lg border border-red-200 bg-red-50 p-6">
++          <p className="text-red-700">{error}</p>
++          {eventId && (
++            <Link href={`/screenings/${eventId}/flag`} className="mt-3 block text-sm text-blue-600 hover:underline">
++              Edit window may have expired — flag for correction instead →
++            </Link>
++          )}
++        </div>
++      </div>
++    );
++  }
++
++  if (success) {
++    return (
++      <div className="mx-auto max-w-2xl px-4 py-12 text-center">
++        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-8">
++          <h2 className="text-lg font-semibold text-emerald-900">Changes Saved</h2>
++          <button
++            onClick={() => router.push(`/children/${event?.patient_id}`)}
++            className="mt-6 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
++          >
++            Back to child profile
++          </button>
++        </div>
++      </div>
++    );
++  }
++
++  return (
++    <div className="mx-auto max-w-2xl px-4 py-8">
++      <button
++        onClick={() => router.push(`/children/${event?.patient_id}`)}
++        className="mb-6 text-sm text-gray-500 hover:text-gray-700"
++      >
++        ← Back to child profile
++      </button>
++
++      <div className="mb-6">
++        <h1 className="text-xl font-bold text-gray-900">Edit Screening Result</h1>
++        <p className="mt-1 text-sm text-gray-500">
++          {event?.ear} ear — {event?.stage?.replace(/_/g, " ")} — result: {event?.result}
++        </p>
++        <p className="mt-1 text-xs text-gray-400">
++          The clinical outcome, ear, and stage can&apos;t be changed here — that could desync the
++          pathway state.{" "}
++          <Link href={`/screenings/${eventId}/flag`} className="text-blue-600 hover:underline">
++            Wrong outcome? Flag for correction instead.
++          </Link>
++        </p>
++      </div>
++
++      {error && (
++        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
++          {error}
++        </div>
++      )}
++
++      <form onSubmit={handleSubmit} className="space-y-6">
++        <div className="grid grid-cols-2 gap-4">
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Equipment ID</label>
++            <input
++              type="text"
++              value={equipmentId}
++              onChange={(e) => setEquipmentId(e.target.value)}
++              className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++            />
++          </div>
++
++          {event?.modality === "OAE" && (
++            <div>
++              <label className="block text-sm font-medium text-gray-700">Probe Fit Quality</label>
++              <select
++                value={probeFitQuality}
++                onChange={(e) => setProbeFitQuality(e.target.value)}
++                className="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++              >
++                <option value="">Select...</option>
++                <option value="Good">Good</option>
++                <option value="Fair">Fair</option>
++                <option value="Poor">Poor</option>
++              </select>
++            </div>
++          )}
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Ambient Noise</label>
++            <select
++              value={ambientNoiseLevel}
++              onChange={(e) => setAmbientNoiseLevel(e.target.value)}
++              className="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++            >
++              <option value="Low">Low</option>
++              <option value="Medium">Medium</option>
++              <option value="High">High</option>
++            </select>
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Attempts</label>
++            <input
++              type="number"
++              min="1"
++              max="20"
++              value={attempts}
++              onChange={(e) => setAttempts(parseInt(e.target.value) || 1)}
++              className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++            />
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Duration (minutes)</label>
++            <input
++              type="number"
++              min="0"
++              step="0.5"
++              value={durationMinutes}
++              onChange={(e) => setDurationMinutes(e.target.value)}
++              className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++            />
++          </div>
++        </div>
++
++        <div>
++          <label className="block text-sm font-medium text-gray-700">Screener&apos;s Clinical Comment</label>
++          <textarea
++            value={clinicalComment}
++            onChange={(e) => setClinicalComment(e.target.value)}
++            rows={2}
++            className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++          />
++        </div>
++
++        <div className="flex items-center gap-3 pt-2">
++          <button
++            type="submit"
++            disabled={submitting}
++            className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
++          >
++            {submitting ? "Saving..." : "Save Changes"}
++          </button>
++          <button
++            type="button"
++            onClick={() => router.back()}
++            className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
++          >
++            Cancel
++          </button>
++        </div>
++      </form>
++    </div>
++  );
++}
+diff --git a/my-app/app/(app)/screenings/[eventId]/flag/page.tsx b/my-app/app/(app)/screenings/[eventId]/flag/page.tsx
+index e69de29..ce863e8 100644
+--- a/my-app/app/(app)/screenings/[eventId]/flag/page.tsx
++++ b/my-app/app/(app)/screenings/[eventId]/flag/page.tsx
+@@ -0,0 +1,127 @@
++// app/(app)/screenings/[eventId]/flag/page.tsx
++"use client";
++
++import { useState, use } from "react";
++import { useRouter } from "next/navigation";
++
++export default function FlagScreeningPage({
++  params,
++}: {
++  params: Promise<{ eventId: string }>;
++}) {
++  const { eventId } = use(params);
++  const router = useRouter();
++
++  const [reason, setReason] = useState("");
++  const [submitting, setSubmitting] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [success, setSuccess] = useState(false);
++
++  function authHeaders(): Record<string, string> {
++    const token = document.cookie
++      .split("; ")
++      .find((row) => row.startsWith("access_token="))
++      ?.split("=")[1];
++    return token ? { Authorization: `Bearer ${token}` } : {};
++  }
++
++  async function handleSubmit(e: React.FormEvent) {
++    e.preventDefault();
++    if (reason.trim().length < 5) {
++      setError("Please describe what's wrong (at least 5 characters).");
++      return;
++    }
++    setSubmitting(true);
++    setError(null);
++    try {
++      const res = await fetch(`/api/v1/screenings/${eventId}/flag`, {
++        method: "POST",
++        headers: { "Content-Type": "application/json", ...authHeaders() },
++        body: JSON.stringify({ reason }),
++      });
++      const data = await res.json();
++      if (!res.ok) {
++        setError(data.error ?? "Failed to submit flag");
++        return;
++      }
++      setSuccess(true);
++    } catch {
++      setError("Network error — please try again");
++    } finally {
++      setSubmitting(false);
++    }
++  }
++
++  if (success) {
++    return (
++      <div className="mx-auto max-w-lg px-4 py-16 text-center">
++        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-8">
++          <h2 className="text-lg font-semibold text-emerald-900">Flag Submitted</h2>
++          <p className="mt-2 text-sm text-emerald-700">
++            A supervisor will review this and action a correction if needed. The original record
++            is unchanged.
++          </p>
++          <button
++            onClick={() => router.back()}
++            className="mt-6 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
++          >
++            Done
++          </button>
++        </div>
++      </div>
++    );
++  }
++
++  return (
++    <div className="mx-auto max-w-lg px-4 py-8">
++      <button onClick={() => router.back()} className="mb-6 text-sm text-gray-500 hover:text-gray-700">
++        ← Back
++      </button>
++
++      <h1 className="text-xl font-bold text-gray-900">Flag for Correction</h1>
++      <p className="mt-1 text-sm text-gray-500">
++        This does not edit the record. It creates a request for the Data Clerk / Supervisor to
++        review and correct.
++      </p>
++
++      {error && (
++        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
++          {error}
++        </div>
++      )}
++
++      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
++        <div>
++          <label className="block text-sm font-medium text-gray-700">
++            What's wrong with this record? <span className="text-red-500">*</span>
++          </label>
++          <textarea
++            value={reason}
++            onChange={(e) => setReason(e.target.value)}
++            rows={4}
++            required
++            placeholder='e.g. "Clerk recorded left ear but I tested right ear"'
++            className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
++          />
++        </div>
++
++        <div className="flex items-center gap-3 pt-2">
++          <button
++            type="submit"
++            disabled={submitting}
++            className="rounded-lg bg-amber-600 px-6 py-3 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
++          >
++            {submitting ? "Submitting..." : "Submit Flag"}
++          </button>
++          <button
++            type="button"
++            onClick={() => router.back()}
++            className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
++          >
++            Cancel
++          </button>
++        </div>
++      </form>
++    </div>
++  );
++}
+diff --git a/my-app/app/api/v1/children/[id]/screenings/route.ts b/my-app/app/api/v1/children/[id]/screenings/route.ts
+index ad69882..f2578c3 100644
+--- a/my-app/app/api/v1/children/[id]/screenings/route.ts
++++ b/my-app/app/api/v1/children/[id]/screenings/route.ts
+@@ -6,10 +6,10 @@ import {
+   getExpectedStage,
+   derivePatientStatus,
+   getModality,
+-  type EarState,
++  type EarStateValue,
+   type Ear,
+ } from '@/lib/pathway';
+-import { requireAuth, authErrResponse } from '@/lib/Auth/requireAuth';
++import { requireAuth, authErrResponse } from '@/lib/auth/requireAuth';
+ 
+ /**
+  * POST /api/v1/children/[id]/screenings
+@@ -83,7 +83,7 @@ for (const ear of ears) {
+     where: { patientId_ear: { patientId, ear } },
+   });
+ 
+-  const currentState: EarState = (earState?.state as EarState) ?? 'NOT_STARTED';
++  const currentState: EarStateValue = (earState?.state as EarStateValue) ?? 'NOT_STARTED';
+ 
+   // ── Guard: out-of-order protection (§17.4) ──
+   const stage = body.stage;
+@@ -315,11 +315,11 @@ async function getEarState(
+   prisma: typeof import('@/lib/prisma').prisma,
+   patientId: string,
+   ear: Ear
+-): Promise<EarState> {
++): Promise<EarStateValue> {
+   const eps = await prisma.earPathwayState.findUnique({
+     where: { patientId_ear: { patientId, ear } },
+   });
+-  return (eps?.state as EarState) ?? 'NOT_STARTED';
++  return (eps?.state as EarStateValue) ?? 'NOT_STARTED';
+ }
+ 
+ function buildConfirmationMessage(
+diff --git a/my-app/app/api/v1/referrals/[...route]/route.ts b/my-app/app/api/v1/referrals/[...route]/route.ts
+index e69de29..3f6df75 100644
+--- a/my-app/app/api/v1/referrals/[...route]/route.ts
++++ b/my-app/app/api/v1/referrals/[...route]/route.ts
+@@ -0,0 +1,176 @@
++// app/api/v1/referrals/[...route]/route.ts
++//
++// GET   /api/v1/referrals/:id            — fetch one referral (for the resolution form)
++// PATCH /api/v1/referrals/:id            — resolve a referral (CLEARED/TREATED/SEEN/NO_SHOW)
++//
++// This is the closing half of the Screen 2 / Rescreen -> referral loop.
++// The pathway engine already auto-creates a PENDING referral when an ear
++// fails Screen 2 (-> HCP) or a post-referral rescreen (-> audiologist), via
++// AUTO_CREATE_HCP_REFERRAL / AUTO_CREATE_AUDIOLOGY_REFERRAL side effects in
++// app/api/v1/children/[id]/screenings/route.ts. Until now nothing ever
++// wrote a *resolution* back onto that referral, so an ear that failed
++// Screen 2 had no way to reach CLEARED_FOR_RESCREEN — this endpoint is
++// what runs transitionEarState's REFERRAL_UPDATED event and unblocks it.
++//
++// Only HEALTH_CARE_PROVIDER referrals resolve through this state-changing
++// path (§17.2 rows 7-10). An AUDIOLOGIST referral is closed by a
++// diagnostic evaluation instead (RESCREEN_FAILED -> DIAGNOSED), not by a
++// status change here — see the diagnostic-evaluations route.
++
++import { type NextRequest, NextResponse } from "next/server";
++import { requireAuth, authErrResponse } from "@/lib/auth/requireAuth";
++import { prisma } from "@/lib/prisma";
++import { ReferralUpdateSchema } from "@/lib/validation/schemas";
++import { transitionEarState, derivePatientStatus, type EarStateValue } from "@/lib/pathway";
++import type { Prisma } from "@prisma/client";
++
++async function getEarState(patientId: string, ear: "LEFT" | "RIGHT"): Promise<EarStateValue> {
++  const eps = await prisma.earPathwayState.findUnique({
++    where: { patientId_ear: { patientId, ear } },
++  });
++  return (eps?.state as EarStateValue) ?? "NOT_STARTED";
++}
++
++export async function GET(
++  request: NextRequest,
++  { params }: { params: Promise<{ route: string[] }> }
++) {
++  try {
++    await requireAuth(request, ["DATA_CLERK", "SUPERVISOR", "ADMIN"]);
++    const { route } = await params;
++    const referralId = route?.[0];
++    if (!referralId) return NextResponse.json({ error: "Referral ID required" }, { status: 400 });
++
++    const referral = await prisma.referral.findUnique({
++      where: { id: referralId },
++      include: { patient: { select: { id: true, research_id: true, mother_name: true, nicu_days: true } } },
++    });
++    if (!referral) return NextResponse.json({ error: "Referral not found" }, { status: 404 });
++
++    return NextResponse.json({ referral });
++  } catch (err) {
++    return authErrResponse(err);
++  }
++}
++
++export async function PATCH(
++  request: NextRequest,
++  { params }: { params: Promise<{ route: string[] }> }
++) {
++  try {
++    const user = await requireAuth(request, ["DATA_CLERK", "SUPERVISOR", "ADMIN"]);
++    const { route } = await params;
++    const referralId = route?.[0];
++    if (!referralId) return NextResponse.json({ error: "Referral ID required" }, { status: 400 });
++
++    const body = await request.json();
++    const parsed = ReferralUpdateSchema.safeParse(body);
++    if (!parsed.success) {
++      return NextResponse.json({ error: "Validation failed", issues: parsed.error.flatten() }, { status: 422 });
++    }
++    const d = parsed.data;
++
++    const referral = await prisma.referral.findUnique({ where: { id: referralId } });
++    if (!referral) return NextResponse.json({ error: "Referral not found" }, { status: 404 });
++
++    if (referral.status !== "PENDING") {
++      return NextResponse.json(
++        { error: `Referral already resolved (status: ${referral.status}). Resolving twice would desync the pathway state.` },
++        { status: 422 }
++      );
++    }
++
++    // PE-tube outcome (status "SEEN") only makes sense with pe_tube_placed
++    // set — that boolean is what tells the confirmation message and the
++    // clinical record which delay window applied.
++    if (d.status === "SEEN" && d.pe_tube_placed !== true) {
++      return NextResponse.json(
++        { error: 'status "SEEN" represents a PE-tube-placement outcome — set pe_tube_placed: true, or use "TREATED" for medically-treated otitis media.' },
++        { status: 422 }
++      );
++    }
++
++    // Only HCP referrals drive a pathway transition here — see file header.
++    let transition: ReturnType<typeof transitionEarState> | null = null;
++    let currentState: EarStateValue | null = null;
++    if (referral.type === "HEALTH_CARE_PROVIDER") {
++      currentState = await getEarState(referral.patient_id, referral.ear);
++      if (currentState !== "SCREEN_2_FAILED") {
++        return NextResponse.json(
++          {
++            error: `Ear is in state "${currentState}", not "SCREEN_2_FAILED" — this referral no longer matches the ear's current pathway position. Check for a newer referral on this ear.`,
++          },
++          { status: 422 }
++        );
++      }
++      transition = transitionEarState(currentState, {
++        type: "REFERRAL_UPDATED",
++        referralStatus: d.status as "CLEARED" | "TREATED" | "SEEN" | "NO_SHOW",
++      });
++    }
++
++    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
++      const updated = await tx.referral.update({
++        where: { id: referralId },
++        data: {
++          status: d.status,
++          diagnosis_at_referral: d.diagnosis_at_referral ?? undefined,
++          treatment_given: d.treatment_given ?? undefined,
++          medical_clearance_given: d.medical_clearance_given ?? undefined,
++          pe_tube_placed: d.pe_tube_placed ?? undefined,
++          provider_name: d.provider_name ?? undefined,
++          facility: d.facility ?? undefined,
++          resolved_at: d.status === "NO_SHOW" ? null : new Date(),
++        },
++      });
++
++      if (transition && currentState) {
++        await tx.earPathwayState.upsert({
++          where: { patientId_ear: { patientId: referral.patient_id, ear: referral.ear } },
++          create: {
++            patientId: referral.patient_id,
++            ear: referral.ear,
++            state: transition.nextState,
++            modality: "OAE", // modality is locked at intake and unaffected by referral resolution
++          },
++          update: { state: transition.nextState },
++        });
++
++        const otherEar = referral.ear === "LEFT" ? "RIGHT" : "LEFT";
++        const otherState = await getEarState(referral.patient_id, otherEar);
++        const newPatientStatus = derivePatientStatus(
++          referral.ear === "LEFT" ? transition.nextState : otherState,
++          referral.ear === "RIGHT" ? transition.nextState : otherState
++        );
++
++        await tx.pathwayMilestone.updateMany({
++          where: { patient_id: referral.patient_id },
++          data: { final_status: newPatientStatus, computed_at: new Date() },
++        });
++      }
++
++      await tx.auditLog.create({
++        data: {
++          table_name: "referrals",
++          record_id: referralId,
++          action: "UPDATE",
++          changed_by: user.id,
++          before_value: { status: referral.status },
++          after_value: { status: d.status, ear_next_state: transition?.nextState ?? null },
++        },
++      });
++
++      return updated;
++    });
++
++    const message = transition
++      ? transition.nextState === "CLEARED_FOR_RESCREEN"
++        ? `Referral resolved (${d.status}) — ${referral.ear.toLowerCase()} ear cleared for rescreen.`
++        : `Referral marked ${d.status} — no-show logged, HCP notification series resumed. Ear remains at Screen 2 failed pending follow-up.`
++      : `Referral marked ${d.status}.`;
++
++    return NextResponse.json({ referral: result, next_state: transition?.nextState ?? null, message });
++  } catch (err) {
++    return authErrResponse(err);
++  }
++}
+diff --git a/my-app/app/api/v1/screenings/[...route]/route.ts b/my-app/app/api/v1/screenings/[...route]/route.ts
+index 1c0df26..d50dd33 100644
+--- a/my-app/app/api/v1/screenings/[...route]/route.ts
++++ b/my-app/app/api/v1/screenings/[...route]/route.ts
+@@ -1,236 +1,58 @@
+ // app/api/v1/screenings/[...route]/route.ts
+-// POST /api/v1/patients/:id/screenings — add screening result
+-// PATCH /api/v1/screenings/:eventId — edit within window
+-// POST /api/v1/screenings/:eventId/flag — screener flag for correction
++//
++// PATCH /api/v1/screenings/:eventId        — edit a screening event within the edit window
++// POST  /api/v1/screenings/:eventId/flag   — screener flag-for-correction (§46.3)
++//
++// NOTE: creating a new screening result is handled by
++// POST /api/v1/children/[id]/screenings (that route runs the pathway engine
++// and is the single source of truth for SCREENING_SAVED events). This file
++// used to duplicate that logic against an older version of the pathway
++// engine's API (transitionState/checkOrderViolation, string side effects) —
++// that API no longer exists (see lib/pathway/engine.ts, which now exports
++// transitionEarState/guardScreening with object side effects), so the
++// duplicate creation logic here was deleted rather than fixed twice.
+ 
+ import { type NextRequest, NextResponse } from "next/server";
+ import { requireAuth, authErrResponse } from "@/lib/auth/requireAuth";
+ import { prisma } from "@/lib/prisma";
+-import { ScreeningEventCreateSchema } from "@/lib/validation/schemas";
+-import { transitionState, checkOrderViolation, derivePatientStatus } from "@/lib/pathway/engine";
+-import type { EarStateValue, PathwayEvent } from "@/lib/pathway/types";
+-
+-// Helper: derive current ear state from DB records
+-async function getEarState(patientId: string, ear: "LEFT" | "RIGHT"): Promise<EarStateValue> {
+-  const screenings = await prisma.screeningEvent.findMany({
+-    where: { patient_id: patientId, ear },
+-    orderBy: { tested_at: "asc" },
+-  });
+-  const referrals = await prisma.referral.findMany({
+-    where: { patient_id: patientId, ear },
+-    orderBy: { referred_at: "asc" },
+-  });
+-  const diagnostics = await prisma.diagnosticEvaluation.findMany({
+-    where: { patient_id: patientId, ear },
+-  });
+-
+-  if (diagnostics.length > 0) return "DIAGNOSED";
+-
+-  const hasAudiologyReferral = referrals.some((r) => r.type === "AUDIOLOGIST");
+-  const lastScreening = screenings[screenings.length - 1];
+-
+-  if (hasAudiologyReferral && lastScreening?.stage === "RESCREEN_POST_REFERRAL" && lastScreening?.result === "NOT_PASS") return "RESCREEN_FAILED";
+-  if (lastScreening?.stage === "RESCREEN_POST_REFERRAL" && lastScreening?.result === "PASS") return "RESCREEN_PASSED";
+-
+-  const hcpReferral = referrals.find((r) => r.type === "HEALTH_CARE_PROVIDER");
+-  if (hcpReferral && ["CLEARED", "TREATED", "SEEN"].includes(hcpReferral.status)) return "CLEARED_FOR_RESCREEN";
+-  if (hcpReferral && hcpReferral.status === "PENDING") return "SCREEN_2_FAILED";
+-
+-  if (lastScreening?.stage === "SCREEN_2" && lastScreening?.result === "PASS") return "SCREEN_2_PASSED";
+-  if (lastScreening?.stage === "SCREEN_2" && lastScreening?.result === "NOT_PASS") return "SCREEN_2_FAILED";
+-  if (lastScreening?.stage === "SCREEN_1" && lastScreening?.result === "PASS") return "SCREEN_1_PASSED";
+-  if (lastScreening?.stage === "SCREEN_1" && lastScreening?.result === "NOT_PASS") return "SCREEN_1_FAILED";
+-
+-  return "NOT_STARTED";
+-}
+-
+-export async function POST(
++import type { Prisma } from "@prisma/client";
++
++// Fields safe to correct within the edit window without touching the
++// pathway. `result`, `ear`, `stage`, and `modality` drive the state
++// machine — changing them after the fact would desync ear_pathway_states
++// from the screening_events history without re-running the engine, so
++// they are deliberately excluded. A wrong result/ear/stage goes through
++// "Flag for Correction" (§46.3) instead, which routes to a human review
++// rather than a silent state-machine skip.
++const EDITABLE_FIELDS = new Set([
++  "equipment_id",
++  "probe_fit_quality",
++  "ambient_noise_level",
++  "attempts",
++  "duration_minutes",
++  "incomplete_reason",
++  "clinicalComment",
++  "tested_at",
++]);
++
++const EDIT_WINDOW_HOURS = 48;
++
++export async function GET(
+   request: NextRequest,
+-  { params }: { params: { route: string[] } }
++  { params }: { params: Promise<{ route: string[] }> }
+ ) {
+-  const route = params.route ?? [];
+-
+-  // POST /api/v1/screenings/:eventId/flag
+-  if (route.length === 2 && route[1] === "flag") {
+-    return handleFlag(request, route[0]);
+-  }
+-
+-  // POST from /api/v1/patients/:id/screenings — route has patient_id
+-  // But this file is mounted at /api/v1/screenings/[...route]
+-  // The patient route calls /api/v1/patients/:id/screenings which is handled by patients route
+-  // This handles direct POST to /api/v1/screenings with patient_id in body
+-
+   try {
+-    const user = await requireAuth(request, ["DATA_CLERK", "ADMIN"]);
+-    const body = await request.json();
+-    const { patient_id, ...rest } = body;
+-
+-    if (!patient_id) {
+-      return NextResponse.json({ error: "patient_id required" }, { status: 422 });
+-    }
+-
+-    const parsed = ScreeningEventCreateSchema.safeParse(rest);
+-    if (!parsed.success) {
+-      return NextResponse.json({ error: "Validation failed", issues: parsed.error.flatten() }, { status: 422 });
++    await requireAuth(request, ["DATA_CLERK", "SCREENER", "SUPERVISOR", "ADMIN"]);
++    const { route } = await params;
++    const eventId = route?.[0];
++    if (!eventId) {
++      return NextResponse.json({ error: "Event ID required" }, { status: 400 });
+     }
+ 
+-    const d = parsed.data;
+-    const patient = await prisma.patient.findUnique({ where: { id: patient_id } });
+-    if (!patient) return NextResponse.json({ error: "Patient not found" }, { status: 404 });
++    const screening = await prisma.screeningEvent.findUnique({ where: { id: eventId } });
++    if (!screening) return NextResponse.json({ error: "Screening event not found" }, { status: 404 });
+ 
+-    // §17.4 out-of-order protection
+-    const currentState = await getEarState(patient_id, d.ear as "LEFT" | "RIGHT");
+-    const stageKey = d.stage === "SCREEN_1" ? "SCREEN_1"
+-      : d.stage === "SCREEN_2" ? "SCREEN_2"
+-      : "RESCREEN_POST_REFERRAL";
+-
+-    const violation = checkOrderViolation(currentState, stageKey);
+-    if (violation) {
+-      return NextResponse.json({
+-        error: `Out-of-order entry: ${violation.replace(/_/g, " ")}`,
+-        current_state: currentState,
+-      }, { status: 422 });
+-    }
+-
+-    // §17.1 NICU modality enforcement
+-    const nicuDays = patient.nicu_days ?? 0;
+-    if (patient.nicu_admitted && nicuDays > 5 && d.modality !== "AABR") {
+-      return NextResponse.json({
+-        error: "NICU > 5 days: modality must be AABR (§17.1). OAE alone cannot detect auditory neuropathy.",
+-      }, { status: 422 });
+-    }
+-
+-    const event: PathwayEvent = {
+-      type: "SCREENING_SAVED",
+-      stage: d.stage,
+-      result: d.result,
+-    };
+-
+-    const transition = transitionState(currentState, event);
+-
+-    const result = await prisma.$transaction(async (tx) => {
+-      const screening = await tx.screeningEvent.create({
+-        data: {
+-          patient_id,
+-          ear: d.ear,
+-          stage: d.stage,
+-          modality: d.modality,
+-          equipment_id: d.equipment_id,
+-          probe_fit_quality: d.probe_fit_quality ?? null,
+-          ambient_noise_level: d.ambient_noise_level,
+-          attempts: d.attempts,
+-          screener_id: d.screener_id,
+-          duration_minutes: d.duration_minutes,
+-          result: d.result,
+-          incomplete_reason: d.incomplete_reason ?? null,
+-          tested_at: new Date(d.tested_at),
+-          recorded_at: new Date(),
+-        },
+-      });
+-
+-      // Auto-create HCP referral if pathway engine says so
+-      if (transition.sideEffects.includes("AUTO_CREATE_HCP_REFERRAL")) {
+-        await tx.referral.create({
+-          data: {
+-            patient_id,
+-            ear: d.ear,
+-            type: "HEALTH_CARE_PROVIDER",
+-            reason: `Auto-created: Screen 2 NOT_PASS for ${d.ear} ear`,
+-            provider_name: "To be assigned",
+-            facility: "To be assigned",
+-            status: "PENDING",
+-          },
+-        });
+-      }
+-
+-      // Auto-create audiology referral
+-      if (transition.sideEffects.includes("AUTO_CREATE_AUDIOLOGY_REFERRAL")) {
+-        await tx.referral.create({
+-          data: {
+-            patient_id,
+-            ear: d.ear,
+-            type: "AUDIOLOGIST",
+-            reason: `Auto-created: Rescreen NOT_PASS for ${d.ear} ear`,
+-            provider_name: "To be assigned",
+-            facility: "To be assigned",
+-            status: "PENDING",
+-          },
+-        });
+-      }
+-
+-      // Recompute pathway milestones
+-      const otherEar: "LEFT" | "RIGHT" = d.ear === "LEFT" ? "RIGHT" : "LEFT";
+-      const otherEarState = await getEarState(patient_id, otherEar);
+-      const newEarState = transition.nextState;
+-      const patientStatus = derivePatientStatus(
+-        d.ear === "LEFT" ? newEarState : otherEarState,
+-        d.ear === "RIGHT" ? newEarState : otherEarState,
+-      );
+-
+-      // Map to Prisma enum
+-      const finalStatusMap: Record<string, string> = {
+-        PASSED: "PASSED",
+-        IN_PROGRESS: "IN_PROGRESS",
+-        REFERRED_AUDIOLOGY: "REFERRED_AUDIOLOGY",
+-        DIAGNOSED: "DIAGNOSED",
+-        LOST_TO_FOLLOWUP: "LOST_TO_FOLLOWUP",
+-      };
+-
+-      const birthDate = patient.date_of_birth;
+-      const firstScreen = await tx.screeningEvent.findFirst({
+-        where: { patient_id },
+-        orderBy: { tested_at: "asc" },
+-      });
+-      const daysBirthToFirstScreen = firstScreen
+-        ? Math.floor((firstScreen.tested_at.getTime() - birthDate.getTime()) / 86400000)
+-        : 0;
+-
+-      await tx.pathwayMilestone.upsert({
+-        where: { patient_id },
+-        create: {
+-          patient_id,
+-          days_birth_to_first_screen: daysBirthToFirstScreen,
+-          screened_within_1_month: daysBirthToFirstScreen <= 30,
+-          diagnosed_within_3_months: false,
+-          intervention_within_6_months: false,
+-          final_status: finalStatusMap[patientStatus] as never,
+-          computed_at: new Date(),
+-        },
+-        update: {
+-          final_status: finalStatusMap[patientStatus] as never,
+-          computed_at: new Date(),
+-        },
+-      });
+-
+-      await tx.auditLog.create({
+-        data: {
+-          table_name: "screening_events",
+-          record_id: screening.id,
+-          action: "INSERT",
+-          changed_by: user.id,
+-          after_value: { screening_id: screening.id, ear: d.ear, result: d.result },
+-        },
+-      });
+-
+-      return screening;
+-    });
+-
+-    // Build confirmation message for clerk (§46.2 Step 4)
+-    let msg = `${d.stage.replace(/_/g, " ")} result saved — ${d.ear} ear: ${d.result}.`;
+-    if (transition.sideEffects.includes("AUTO_CREATE_HCP_REFERRAL")) {
+-      msg += " HCP referral auto-created.";
+-    }
+-    if (transition.sideEffects.includes("AUTO_CREATE_AUDIOLOGY_REFERRAL")) {
+-      msg += " Audiology referral auto-created.";
+-    }
+-    if (transition.sideEffects.includes("MARK_EAR_RESOLVED")) {
+-      msg += " Ear pathway resolved.";
+-    }
+-    if (transition.warning) {
+-      msg += ` ⚠ ${transition.warning}`;
+-    }
+-
+-    return NextResponse.json({ id: result.id, message: msg, next_state: transition.nextState }, { status: 201 });
++    return NextResponse.json({ screening });
+   } catch (err) {
+     return authErrResponse(err);
+   }
+@@ -238,28 +60,49 @@ export async function POST(
+ 
+ export async function PATCH(
+   request: NextRequest,
+-  { params }: { params: { route: string[] } }
++  { params }: { params: Promise<{ route: string[] }> }
+ ) {
+   try {
+     const user = await requireAuth(request, ["DATA_CLERK", "SUPERVISOR", "ADMIN"]);
+-    const eventId = params.route?.[0];
+-    if (!eventId) return NextResponse.json({ error: "Event ID required" }, { status: 400 });
++    const { route } = await params;
++    const eventId = route?.[0];
++    if (!eventId) {
++      return NextResponse.json({ error: "Event ID required" }, { status: 400 });
++    }
+ 
+     const event = await prisma.screeningEvent.findUnique({ where: { id: eventId } });
+-    if (!event) return NextResponse.json({ error: "Not found" }, { status: 404 });
++    if (!event) return NextResponse.json({ error: "Screening event not found" }, { status: 404 });
+ 
+     if (user.role === "DATA_CLERK") {
+       const hours = (Date.now() - event.recorded_at.getTime()) / 3600000;
+-      if (hours > 48) {
+-        return NextResponse.json({ error: "Edit window expired — submit a correction request" }, { status: 403 });
++      if (hours > EDIT_WINDOW_HOURS) {
++        return NextResponse.json(
++          { error: `Edit window (${EDIT_WINDOW_HOURS}h) has expired — submit a Flag for Correction instead.` },
++          { status: 403 }
++        );
+       }
+     }
+ 
+     const body = await request.json();
++    const rejected = Object.keys(body).filter((k) => !EDITABLE_FIELDS.has(k));
++    if (rejected.length > 0) {
++      return NextResponse.json(
++        {
++          error: `These fields cannot be edited directly because they drive the pathway state machine: ${rejected.join(", ")}. Use "Flag for Correction" instead so a supervisor can review and, if needed, re-run the pathway.`,
++        },
++        { status: 422 }
++      );
++    }
++
++    const data: Record<string, unknown> = {};
++    for (const key of Object.keys(body)) {
++      data[key] = key === "tested_at" ? new Date(body[key]) : body[key];
++    }
++
+     const before = { ...event };
+ 
+-    await prisma.$transaction(async (tx) => {
+-      await tx.screeningEvent.update({ where: { id: eventId }, data: body });
++    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
++      await tx.screeningEvent.update({ where: { id: eventId }, data });
+       await tx.auditLog.create({
+         data: {
+           table_name: "screening_events",
+@@ -267,7 +110,7 @@ export async function PATCH(
+           action: "UPDATE",
+           changed_by: user.id,
+           before_value: before,
+-          after_value: body,
++          after_value: data,
+         },
+       });
+     });
+@@ -278,6 +121,22 @@ export async function PATCH(
+   }
+ }
+ 
++export async function POST(
++  request: NextRequest,
++  { params }: { params: Promise<{ route: string[] }> }
++) {
++  const { route } = await params;
++
++  if (route?.length === 2 && route[1] === "flag") {
++    return handleFlag(request, route[0]);
++  }
++
++  return NextResponse.json(
++    { error: "Not found. Use POST /api/v1/children/:id/screenings to create a result, or POST /api/v1/screenings/:eventId/flag to flag one for correction." },
++    { status: 404 }
++  );
++}
++
+ async function handleFlag(request: NextRequest, eventId: string) {
+   try {
+     const user = await requireAuth(request, ["SCREENER", "DATA_CLERK", "SUPERVISOR", "ADMIN"]);
+@@ -293,15 +152,18 @@ async function handleFlag(request: NextRequest, eventId: string) {
+       data: {
+         requested_by: user.id,
+         table_name: "screening_events",
+-        record_id: event.id as unknown as string,
++        record_id: event.id,
+         reason: body.reason,
+         proposed_value: body.proposed_value ?? {},
+         status: "PENDING",
+       },
+     });
+ 
+-    return NextResponse.json({ success: true, message: "Flag submitted — supervisor will review." }, { status: 201 });
++    return NextResponse.json(
++      { success: true, message: "Flag submitted — supervisor will review." },
++      { status: 201 }
++    );
+   } catch (err) {
+     return authErrResponse(err);
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/my-app/components/children/EarStateCard.tsx b/my-app/components/children/EarStateCard.tsx
+index d1bc6e1..d1c7f4c 100644
+--- a/my-app/components/children/EarStateCard.tsx
++++ b/my-app/components/children/EarStateCard.tsx
+@@ -2,7 +2,7 @@
+ 
+ import Link from 'next/link';
+ import {
+-  type EarState,
++  type EarStateValue,
+   type Ear,
+   getEarStateLabel,
+   getExpectedStage,
+@@ -12,7 +12,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
+ 
+ interface EarStateCardProps {
+   ear: Ear;
+-  state: EarState;
++  state: EarStateValue;
+   modality: string;
+   patientId: string;
+ }
+diff --git a/my-app/components/ui/StatusBadge.tsx b/my-app/components/ui/StatusBadge.tsx
+index 01412c0..56f5448 100644
+--- a/my-app/components/ui/StatusBadge.tsx
++++ b/my-app/components/ui/StatusBadge.tsx
+@@ -1,10 +1,10 @@
+ 'use client';
+ 
+-import type { PatientFinalStatus, EarState } from '@/lib/pathway';
++import type { PatientPathwayStatus, EarStateValue } from '@/lib/pathway';
+ 
+ type BadgeVariant = 'green' | 'blue' | 'amber' | 'purple' | 'red' | 'gray';
+ 
+-const patientStatusColors: Record<PatientFinalStatus, BadgeVariant> = {
++const patientStatusColors: Record<PatientPathwayStatus, BadgeVariant> = {
+   PASSED: 'green',
+   IN_PROGRESS: 'blue',
+   REFERRED_AUDIOLOGY: 'amber',
+@@ -12,7 +12,7 @@ const patientStatusColors: Record<PatientFinalStatus, BadgeVariant> = {
+   LOST_TO_FOLLOWUP: 'red',
+ };
+ 
+-const earStateColors: Record<EarState, BadgeVariant> = {
++const earStateColors: Record<EarStateValue, BadgeVariant> = {
+   NOT_STARTED: 'gray',
+   SCREEN_1_PASSED: 'green',
+   SCREEN_1_FAILED: 'amber',
+@@ -47,8 +47,8 @@ const dotColors: Record<BadgeVariant, string> = {
+ interface StatusBadgeProps {
+   label: string;
+   variant?: BadgeVariant;
+-  patientStatus?: PatientFinalStatus;
+-  earState?: EarState;
++  patientStatus?: PatientPathwayStatus;
++  earState?: EarStateValue;
+   size?: 'sm' | 'md';
+ }
+ 
+@@ -60,11 +60,12 @@ export function StatusBadge({
+   size = 'sm',
+ }: StatusBadgeProps) {
+   const resolvedVariant: BadgeVariant =
+-    variant ?? patientStatus
++    variant ??
++    (patientStatus
+       ? patientStatusColors[patientStatus]
+       : earState
+         ? earStateColors[earState]
+-        : 'gray';
++        : 'gray');
+ 
+   const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';
+ 
+diff --git a/my-app/lib/Auth/jwt.ts b/my-app/lib/auth/jwt.ts
+similarity index 100%
+rename from my-app/lib/Auth/jwt.ts
+rename to my-app/lib/auth/jwt.ts
+diff --git a/my-app/lib/Auth/lockout.ts b/my-app/lib/auth/lockout.ts
+similarity index 100%
+rename from my-app/lib/Auth/lockout.ts
+rename to my-app/lib/auth/lockout.ts
+diff --git a/my-app/lib/Auth/redis.ts b/my-app/lib/auth/redis.ts
+similarity index 100%
+rename from my-app/lib/Auth/redis.ts
+rename to my-app/lib/auth/redis.ts
+diff --git a/my-app/lib/Auth/requireAuth.ts b/my-app/lib/auth/requireAuth.ts
+similarity index 100%
+rename from my-app/lib/Auth/requireAuth.ts
+rename to my-app/lib/auth/requireAuth.ts
+diff --git a/my-app/lib/Auth/totp.ts b/my-app/lib/auth/totp.ts
+similarity index 100%
+rename from my-app/lib/Auth/totp.ts
+rename to my-app/lib/auth/totp.ts
+diff --git a/my-app/lib/Auth/twoFactorDelivery.ts b/my-app/lib/auth/twoFactorDelivery.ts
+similarity index 100%
+rename from my-app/lib/Auth/twoFactorDelivery.ts
+rename to my-app/lib/auth/twoFactorDelivery.ts
+diff --git a/my-app/lib/pathway/engine.test.ts b/my-app/lib/pathway/engine.test.ts
+index 4e4b3ef..e1b3d28 100644
+--- a/my-app/lib/pathway/engine.test.ts
++++ b/my-app/lib/pathway/engine.test.ts
+@@ -1,13 +1,20 @@
+ // lib/pathway/engine.test.ts
+ // One test per row in §17.2 state transition table.
+-// Run with: npx jest lib/pathway/engine.test.ts
++// Run with: npm test  (vitest)
+ 
++import { describe, it, expect } from "vitest";
+ import {
+-  transitionState,
++  transitionEarState,
+   assignModality,
+   derivePatientStatus,
+-  checkOrderViolation,
++  guardScreening,
+ } from "./engine";
++import type { SideEffect } from "./types";
++
++/** Helper: does the side-effect list contain a given kind? */
++function hasEffect(effects: readonly SideEffect[], kind: SideEffect["kind"]): boolean {
++  return effects.some((e) => e.kind === kind);
++}
+ 
+ // ---------------------------------------------------------------------------
+ // §17.1 — Modality assignment
+@@ -32,39 +39,39 @@ describe("assignModality", () => {
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// §17.2 row 1 — NOT_STARTED + Screen 1 PASS → SCREEN_1_PASSED
++// §17.2 row 1-3 — NOT_STARTED transitions
+ // ---------------------------------------------------------------------------
+ describe("NOT_STARTED transitions", () => {
+-  it("row 1: Screen 1 PASS → SCREEN_1_PASSED with milestone recompute", () => {
+-    const result = transitionState("NOT_STARTED", {
++  it("row 1: Screen 1 PASS -> SCREEN_1_PASSED with milestone recompute", () => {
++    const result = transitionEarState("NOT_STARTED", {
+       type: "SCREENING_SAVED",
+       stage: "SCREEN_1",
+       result: "PASS",
+     });
+     expect(result.nextState).toBe("SCREEN_1_PASSED");
+-    expect(result.sideEffects).toContain("RECOMPUTE_MILESTONES");
+-    expect(result.sideEffects).toContain("MARK_EAR_RESOLVED");
++    expect(hasEffect(result.sideEffects, "RECOMPUTE_MILESTONES")).toBe(true);
++    expect(hasEffect(result.sideEffects, "MARK_EAR_RESOLVED")).toBe(true);
+   });
+ 
+-  it("row 2: Screen 1 NOT_PASS → SCREEN_1_FAILED with notifications", () => {
+-    const result = transitionState("NOT_STARTED", {
++  it("row 2: Screen 1 NOT_PASS -> SCREEN_1_FAILED with notifications", () => {
++    const result = transitionEarState("NOT_STARTED", {
+       type: "SCREENING_SAVED",
+       stage: "SCREEN_1",
+       result: "NOT_PASS",
+     });
+     expect(result.nextState).toBe("SCREEN_1_FAILED");
+-    expect(result.sideEffects).toContain("SCHEDULE_SCREEN2_NOTIFICATIONS");
++    expect(hasEffect(result.sideEffects, "SCHEDULE_SCREEN2_NOTIFICATIONS")).toBe(true);
+   });
+ 
+-  it("row 3: Screen 1 INCOMPLETE → NOT_STARTED (no state change)", () => {
+-    const result = transitionState("NOT_STARTED", {
++  it("row 3: Screen 1 INCOMPLETE -> NOT_STARTED (no state change)", () => {
++    const result = transitionEarState("NOT_STARTED", {
+       type: "SCREENING_SAVED",
+       stage: "SCREEN_1",
+       result: "INCOMPLETE",
+     });
+     expect(result.nextState).toBe("NOT_STARTED");
+-    expect(result.sideEffects).toContain("LOG_ATTEMPT");
+-    expect(result.sideEffects).toContain("ALERT_CLERK_RETRY");
++    expect(hasEffect(result.sideEffects, "LOG_ATTEMPT")).toBe(true);
++    expect(hasEffect(result.sideEffects, "ALERT_CLERK_RETRY")).toBe(true);
+   });
+ });
+ 
+@@ -72,79 +79,90 @@ describe("NOT_STARTED transitions", () => {
+ // §17.2 rows 4-6 — SCREEN_1_FAILED transitions
+ // ---------------------------------------------------------------------------
+ describe("SCREEN_1_FAILED transitions", () => {
+-  it("row 4: Screen 2 PASS → SCREEN_2_PASSED", () => {
+-    const result = transitionState("SCREEN_1_FAILED", {
++  it("row 4: Screen 2 PASS -> SCREEN_2_PASSED", () => {
++    const result = transitionEarState("SCREEN_1_FAILED", {
+       type: "SCREENING_SAVED",
+       stage: "SCREEN_2",
+       result: "PASS",
+     });
+     expect(result.nextState).toBe("SCREEN_2_PASSED");
+-    expect(result.sideEffects).toContain("RECOMPUTE_MILESTONES");
+-    expect(result.sideEffects).toContain("MARK_EAR_RESOLVED");
++    expect(hasEffect(result.sideEffects, "RECOMPUTE_MILESTONES")).toBe(true);
++    expect(hasEffect(result.sideEffects, "MARK_EAR_RESOLVED")).toBe(true);
+   });
+ 
+-  it("row 5: Screen 2 NOT_PASS → SCREEN_2_FAILED with HCP referral", () => {
+-    const result = transitionState("SCREEN_1_FAILED", {
++  it("row 5: Screen 2 NOT_PASS -> SCREEN_2_FAILED with HCP referral", () => {
++    const result = transitionEarState("SCREEN_1_FAILED", {
+       type: "SCREENING_SAVED",
+       stage: "SCREEN_2",
+       result: "NOT_PASS",
+     });
+     expect(result.nextState).toBe("SCREEN_2_FAILED");
+-    expect(result.sideEffects).toContain("AUTO_CREATE_HCP_REFERRAL");
+-    expect(result.sideEffects).toContain("SCHEDULE_HCP_REFERRAL_NOTIFICATIONS");
++    expect(hasEffect(result.sideEffects, "AUTO_CREATE_HCP_REFERRAL")).toBe(true);
++    expect(hasEffect(result.sideEffects, "SCHEDULE_HCP_REFERRAL_NOTIFICATIONS")).toBe(true);
+   });
+ 
+-  it("row 6: Screen 2 INCOMPLETE → SCREEN_1_FAILED (no state change)", () => {
+-    const result = transitionState("SCREEN_1_FAILED", {
++  it("row 6: Screen 2 INCOMPLETE -> SCREEN_1_FAILED (no state change)", () => {
++    const result = transitionEarState("SCREEN_1_FAILED", {
+       type: "SCREENING_SAVED",
+       stage: "SCREEN_2",
+       result: "INCOMPLETE",
+     });
+     expect(result.nextState).toBe("SCREEN_1_FAILED");
+-    expect(result.sideEffects).toContain("LOG_ATTEMPT");
++    expect(hasEffect(result.sideEffects, "LOG_ATTEMPT")).toBe(true);
+   });
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// §17.2 rows 7-10 — SCREEN_2_FAILED transitions
++// §17.2 rows 7-10 — SCREEN_2_FAILED (referral resolution) transitions
+ // ---------------------------------------------------------------------------
+-describe("SCREEN_2_FAILED transitions", () => {
+-  it("row 7: Referral CLEARED → CLEARED_FOR_RESCREEN", () => {
+-    const result = transitionState("SCREEN_2_FAILED", {
++describe("SCREEN_2_FAILED transitions (referral resolution)", () => {
++  it("row 7: Referral CLEARED -> CLEARED_FOR_RESCREEN, immediate rescreen", () => {
++    const result = transitionEarState("SCREEN_2_FAILED", {
+       type: "REFERRAL_UPDATED",
+       referralStatus: "CLEARED",
+     });
+     expect(result.nextState).toBe("CLEARED_FOR_RESCREEN");
+-    expect(result.sideEffects).toContain("SCHEDULE_RESCREEN_IMMEDIATELY");
+-    expect(result.sideEffects).toContain("CANCEL_HCP_NOTIFICATION_SERIES");
++    expect(hasEffect(result.sideEffects, "SCHEDULE_RESCREEN_IMMEDIATELY")).toBe(true);
++    expect(hasEffect(result.sideEffects, "CANCEL_HCP_NOTIFICATION_SERIES")).toBe(true);
+   });
+ 
+-  it("row 8: Referral TREATED → CLEARED_FOR_RESCREEN with treatment delay", () => {
+-    const result = transitionState("SCREEN_2_FAILED", {
++  it("row 8: Referral TREATED -> CLEARED_FOR_RESCREEN with treatment delay", () => {
++    const result = transitionEarState("SCREEN_2_FAILED", {
+       type: "REFERRAL_UPDATED",
+       referralStatus: "TREATED",
+     });
+     expect(result.nextState).toBe("CLEARED_FOR_RESCREEN");
+-    expect(result.sideEffects).toContain("SCHEDULE_RESCREEN_AFTER_TREATMENT_DELAY");
++    expect(hasEffect(result.sideEffects, "SCHEDULE_RESCREEN_AFTER_TREATMENT_DELAY")).toBe(true);
++    expect(hasEffect(result.sideEffects, "CANCEL_HCP_NOTIFICATION_SERIES")).toBe(true);
+   });
+ 
+-  it("row 9: Referral SEEN (PE tube) → CLEARED_FOR_RESCREEN with PE delay", () => {
+-    const result = transitionState("SCREEN_2_FAILED", {
++  it("row 9: Referral SEEN (PE tube placed) -> CLEARED_FOR_RESCREEN with PE delay", () => {
++    const result = transitionEarState("SCREEN_2_FAILED", {
+       type: "REFERRAL_UPDATED",
+       referralStatus: "SEEN",
+     });
+     expect(result.nextState).toBe("CLEARED_FOR_RESCREEN");
+-    expect(result.sideEffects).toContain("SCHEDULE_RESCREEN_AFTER_PE_DELAY");
++    expect(hasEffect(result.sideEffects, "SCHEDULE_RESCREEN_AFTER_PE_DELAY")).toBe(true);
++    expect(hasEffect(result.sideEffects, "CANCEL_HCP_NOTIFICATION_SERIES")).toBe(true);
+   });
+ 
+-  it("row 10: Referral NO_SHOW → SCREEN_2_FAILED (no state change, log no-show)", () => {
+-    const result = transitionState("SCREEN_2_FAILED", {
++  it("row 10: Referral NO_SHOW -> SCREEN_2_FAILED (no state change, log no-show, do not drop case)", () => {
++    const result = transitionEarState("SCREEN_2_FAILED", {
+       type: "REFERRAL_UPDATED",
+       referralStatus: "NO_SHOW",
+     });
+     expect(result.nextState).toBe("SCREEN_2_FAILED");
+-    expect(result.sideEffects).toContain("LOG_NO_SHOW_EVENT");
+-    expect(result.sideEffects).toContain("RESUME_HCP_NOTIFICATION_SERIES");
++    expect(hasEffect(result.sideEffects, "LOG_NO_SHOW_EVENT")).toBe(true);
++    expect(hasEffect(result.sideEffects, "RESUME_HCP_NOTIFICATION_SERIES")).toBe(true);
++  });
++
++  it("referral updates are ignored when the ear is not in SCREEN_2_FAILED", () => {
++    const result = transitionEarState("NOT_STARTED", {
++      type: "REFERRAL_UPDATED",
++      referralStatus: "CLEARED",
++    });
++    expect(result.nextState).toBe("NOT_STARTED");
++    expect(result.sideEffects).toHaveLength(0);
+   });
+ });
+ 
+@@ -152,138 +170,113 @@ describe("SCREEN_2_FAILED transitions", () => {
+ // §17.2 rows 11-12 — CLEARED_FOR_RESCREEN transitions
+ // ---------------------------------------------------------------------------
+ describe("CLEARED_FOR_RESCREEN transitions", () => {
+-  it("row 11: Rescreen PASS → RESCREEN_PASSED", () => {
+-    const result = transitionState("CLEARED_FOR_RESCREEN", {
++  it("row 11: Rescreen PASS -> RESCREEN_PASSED", () => {
++    const result = transitionEarState("CLEARED_FOR_RESCREEN", {
+       type: "SCREENING_SAVED",
+       stage: "RESCREEN_POST_REFERRAL",
+       result: "PASS",
+     });
+     expect(result.nextState).toBe("RESCREEN_PASSED");
+-    expect(result.sideEffects).toContain("RECOMPUTE_MILESTONES");
+-    expect(result.sideEffects).toContain("MARK_EAR_RESOLVED");
++    expect(hasEffect(result.sideEffects, "RECOMPUTE_MILESTONES")).toBe(true);
++    expect(hasEffect(result.sideEffects, "MARK_EAR_RESOLVED")).toBe(true);
+   });
+ 
+-  it("row 12: Rescreen NOT_PASS → RESCREEN_FAILED with audiology referral", () => {
+-    const result = transitionState("CLEARED_FOR_RESCREEN", {
++  it("row 12: Rescreen NOT_PASS -> RESCREEN_FAILED with audiology referral", () => {
++    const result = transitionEarState("CLEARED_FOR_RESCREEN", {
+       type: "SCREENING_SAVED",
+       stage: "RESCREEN_POST_REFERRAL",
+       result: "NOT_PASS",
+     });
+     expect(result.nextState).toBe("RESCREEN_FAILED");
+-    expect(result.sideEffects).toContain("AUTO_CREATE_AUDIOLOGY_REFERRAL");
+-    expect(result.sideEffects).toContain("SCHEDULE_AUDIOLOGY_NOTIFICATIONS");
++    expect(hasEffect(result.sideEffects, "AUTO_CREATE_AUDIOLOGY_REFERRAL")).toBe(true);
++    expect(hasEffect(result.sideEffects, "SCHEDULE_AUDIOLOGY_NOTIFICATIONS")).toBe(true);
+   });
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// §17.2 row 13 — RESCREEN_FAILED → DIAGNOSED
++// §17.2 row 13 — RESCREEN_FAILED -> DIAGNOSED
+ // ---------------------------------------------------------------------------
+ describe("RESCREEN_FAILED transitions", () => {
+-  it("row 13: Diagnostic saved with hearing loss → DIAGNOSED with intervention notifications", () => {
+-    const result = transitionState("RESCREEN_FAILED", {
++  it("row 13: Diagnostic saved with hearing loss -> DIAGNOSED with intervention notifications", () => {
++    const result = transitionEarState("RESCREEN_FAILED", {
+       type: "DIAGNOSTIC_SAVED",
+       hasHearingLoss: true,
+     });
+     expect(result.nextState).toBe("DIAGNOSED");
+-    expect(result.sideEffects).toContain("SET_DIAGNOSIS");
+-    expect(result.sideEffects).toContain("SCHEDULE_INTERVENTION_NOTIFICATIONS");
++    expect(hasEffect(result.sideEffects, "SET_DIAGNOSIS")).toBe(true);
++    expect(hasEffect(result.sideEffects, "SCHEDULE_INTERVENTION_NOTIFICATIONS")).toBe(true);
+   });
+ 
+-  it("row 13b: Diagnostic saved without hearing loss → DIAGNOSED without intervention notifications", () => {
+-    const result = transitionState("RESCREEN_FAILED", {
++  it("row 13b: Diagnostic saved without hearing loss -> DIAGNOSED without intervention notifications", () => {
++    const result = transitionEarState("RESCREEN_FAILED", {
+       type: "DIAGNOSTIC_SAVED",
+       hasHearingLoss: false,
+     });
+     expect(result.nextState).toBe("DIAGNOSED");
+-    expect(result.sideEffects).not.toContain("SCHEDULE_INTERVENTION_NOTIFICATIONS");
++    expect(hasEffect(result.sideEffects, "SCHEDULE_INTERVENTION_NOTIFICATIONS")).toBe(false);
+   });
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// §17.2 rows 14-16 — PENDING_LTFU transitions
++// §17.2 rows 14-16 — LTFU transitions
+ // ---------------------------------------------------------------------------
+-describe("PENDING_LTFU transitions", () => {
+-  it("row 15: Supervisor marks LTFU → LOST_TO_FOLLOWUP", () => {
+-    const result = transitionState("PENDING_LTFU", {
++describe("LTFU transitions", () => {
++  it("row 14: Notifications exhausted on an active state -> PENDING_LTFU", () => {
++    const result = transitionEarState("SCREEN_1_FAILED", {
++      type: "NOTIFICATIONS_EXHAUSTED",
++    });
++    expect(result.nextState).toBe("PENDING_LTFU");
++    expect(hasEffect(result.sideEffects, "ALERT_SUPERVISOR_LTFU")).toBe(true);
++  });
++
++  it("row 15: Supervisor marks LTFU -> LOST_TO_FOLLOWUP", () => {
++    const result = transitionEarState("PENDING_LTFU", {
+       type: "SUPERVISOR_MARKED_LTFU",
+     });
+     expect(result.nextState).toBe("LOST_TO_FOLLOWUP");
+-    expect(result.sideEffects).toContain("SET_FINAL_STATUS_LTFU");
+-    expect(result.sideEffects).toContain("STOP_ALL_NOTIFICATIONS");
++    expect(hasEffect(result.sideEffects, "SET_FINAL_STATUS_LTFU")).toBe(true);
++    expect(hasEffect(result.sideEffects, "STOP_ALL_NOTIFICATIONS")).toBe(true);
+   });
+ 
+-  it("row 16: Contact re-established → resumes prior active state", () => {
+-    const result = transitionState("PENDING_LTFU", {
++  it("row 16: Contact re-established -> resumes prior active state", () => {
++    const result = transitionEarState("PENDING_LTFU", {
+       type: "CONTACT_REESTABLISHED",
+       priorState: "SCREEN_2_FAILED",
+     });
+     expect(result.nextState).toBe("SCREEN_2_FAILED");
+-    expect(result.sideEffects).toContain("RESUME_PATHWAY");
++    expect(hasEffect(result.sideEffects, "RESUME_PATHWAY")).toBe(true);
+   });
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// Terminal state guard — no transitions from resolved states
++// §17.4 — Out-of-order entry protection (guardScreening)
+ // ---------------------------------------------------------------------------
+-describe("Terminal state guard", () => {
+-  const terminalStates = [
+-    "SCREEN_1_PASSED",
+-    "SCREEN_2_PASSED",
+-    "RESCREEN_PASSED",
+-    "DIAGNOSED",
+-    "LOST_TO_FOLLOWUP",
+-  ] as const;
+-
+-  terminalStates.forEach((state) => {
+-    it(`${state} returns self with a warning`, () => {
+-      const result = transitionState(state, {
+-        type: "SCREENING_SAVED",
+-        stage: "SCREEN_1",
+-        result: "PASS",
+-      });
+-      expect(result.nextState).toBe(state);
+-      expect(result.warning).toBeDefined();
+-    });
+-  });
+-});
+-
+-// ---------------------------------------------------------------------------
+-// §17.4 — Out-of-order entry protection
+-// ---------------------------------------------------------------------------
+-describe("checkOrderViolation", () => {
++describe("guardScreening — out-of-order entry protection", () => {
+   it("blocks Screen 2 when state is NOT_STARTED", () => {
+-    expect(checkOrderViolation("NOT_STARTED", "SCREEN_2")).toBe(
+-      "SCREEN_2_WITHOUT_SCREEN_1"
+-    );
++    expect(guardScreening("NOT_STARTED", "SCREEN_2")).toMatch(/SCREEN_1_FAILED/);
+   });
+ 
+   it("allows Screen 2 when state is SCREEN_1_FAILED", () => {
+-    expect(checkOrderViolation("SCREEN_1_FAILED", "SCREEN_2")).toBeNull();
++    expect(guardScreening("SCREEN_1_FAILED", "SCREEN_2")).toBeNull();
+   });
+ 
+-  it("blocks Rescreen when state is not CLEARED_FOR_RESCREEN", () => {
+-    expect(checkOrderViolation("SCREEN_2_FAILED", "RESCREEN_POST_REFERRAL")).toBe(
+-      "RESCREEN_WITHOUT_HCP_REFERRAL_RESOLVED"
++  it("blocks Rescreen when the HCP referral has not been resolved", () => {
++    expect(guardScreening("SCREEN_2_FAILED", "RESCREEN_POST_REFERRAL")).toMatch(
++      /CLEARED_FOR_RESCREEN/
+     );
+   });
+ 
+   it("allows Rescreen when state is CLEARED_FOR_RESCREEN", () => {
+-    expect(checkOrderViolation("CLEARED_FOR_RESCREEN", "RESCREEN_POST_REFERRAL")).toBeNull();
++    expect(guardScreening("CLEARED_FOR_RESCREEN", "RESCREEN_POST_REFERRAL")).toBeNull();
+   });
+ 
+-  it("blocks Diagnostic when state is not RESCREEN_FAILED", () => {
+-    expect(checkOrderViolation("SCREEN_1_FAILED", "DIAGNOSTIC")).toBe(
+-      "DIAGNOSTIC_WITHOUT_AUDIOLOGY_REFERRAL"
+-    );
+-  });
+-
+-  it("allows Diagnostic when state is RESCREEN_FAILED", () => {
+-    expect(checkOrderViolation("RESCREEN_FAILED", "DIAGNOSTIC")).toBeNull();
++  it("blocks Screen 1 when the ear already has a Screen 1 result", () => {
++    expect(guardScreening("SCREEN_1_PASSED", "SCREEN_1")).not.toBeNull();
+   });
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// §17.5 — Bilateral state → patient-level status
++// §17.5 — Bilateral state -> patient-level status
+ // ---------------------------------------------------------------------------
+ describe("derivePatientStatus", () => {
+   it("PASSED when both ears resolved", () => {
+@@ -307,4 +300,4 @@ describe("derivePatientStatus", () => {
+     expect(derivePatientStatus("NOT_STARTED", "NOT_STARTED")).toBe("IN_PROGRESS");
+     expect(derivePatientStatus("SCREEN_1_FAILED", "NOT_STARTED")).toBe("IN_PROGRESS");
+   });
+-});
+\ No newline at end of file
++});
+diff --git a/my-app/lib/pathway/engine.ts b/my-app/lib/pathway/engine.ts
+index efd6c8b..b6aa154 100644
+--- a/my-app/lib/pathway/engine.ts
++++ b/my-app/lib/pathway/engine.ts
+@@ -313,14 +313,16 @@ function handleReferralUpdated(
+       };
+ 
+     case "SEEN":
+-      // Patient was seen but no specific clinical outcome recorded yet.
+-      // No state transition — stay in SCREEN_2_FAILED awaiting a
+-      // definitive outcome (CLEARED / TREATED / NO_SHOW).
++      // "SEEN" represents the PE-tube-placement outcome (referral.pe_tube_placed
++      // = true at the DB layer — see §4.5 / §17.3). This is a resolving outcome,
++      // same as CLEARED/TREATED: it must clear the ear for rescreen using the
++      // PE-tube-specific delay window, not the otitis-media treatment delay.
+       return {
+-        nextState: "SCREEN_2_FAILED",
+-        sideEffects: [],
+-        warning:
+-          "Referral marked SEEN but no clinical outcome (CLEARED/TREATED/NO_SHOW) recorded. Ear remains in SCREEN_2_FAILED.",
++        nextState: "CLEARED_FOR_RESCREEN",
++        sideEffects: [
++          { kind: "SCHEDULE_RESCREEN_AFTER_PE_DELAY" },
++          { kind: "CANCEL_HCP_NOTIFICATION_SERIES" },
++        ],
+       };
+ 
+     case "NO_SHOW":
+diff --git a/my-app/package-lock.json b/my-app/package-lock.json
+index f1f37a5..42e7156 100644
+--- a/my-app/package-lock.json
++++ b/my-app/package-lock.json
+@@ -43,7 +43,8 @@
+         "eslint-config-next": "16.2.9",
+         "tailwindcss": "^4",
+         "tsx": "^4.22.4",
+-        "typescript": "^5.9.3"
++        "typescript": "^5.9.3",
++        "vitest": "^4.1.10"
+       }
+     },
+     "node_modules/@alloc/quick-lru": {
+@@ -1089,9 +1090,6 @@
+       "cpu": [
+         "arm"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1108,9 +1106,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1127,9 +1122,6 @@
+       "cpu": [
+         "ppc64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1146,9 +1138,6 @@
+       "cpu": [
+         "riscv64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1165,9 +1154,6 @@
+       "cpu": [
+         "s390x"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1184,9 +1170,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1203,9 +1186,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1222,9 +1202,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1241,9 +1218,6 @@
+       "cpu": [
+         "arm"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1266,9 +1240,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1291,9 +1262,6 @@
+       "cpu": [
+         "ppc64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1316,9 +1284,6 @@
+       "cpu": [
+         "riscv64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1341,9 +1306,6 @@
+       "cpu": [
+         "s390x"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1366,9 +1328,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1391,9 +1350,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1416,9 +1372,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1640,9 +1593,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1659,9 +1609,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1678,9 +1625,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1697,9 +1641,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1857,6 +1798,16 @@
+         "@otplib/core": "13.4.1"
+       }
+     },
++    "node_modules/@oxc-project/types": {
++      "version": "0.139.0",
++      "resolved": "https://registry.npmjs.org/@oxc-project/types/-/types-0.139.0.tgz",
++      "integrity": "sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==",
++      "dev": true,
++      "license": "MIT",
++      "funding": {
++        "url": "https://github.com/sponsors/Boshen"
++      }
++    },
+     "node_modules/@prisma/client": {
+       "version": "5.22.0",
+       "resolved": "https://registry.npmjs.org/@prisma/client/-/client-5.22.0.tgz",
+@@ -1946,6 +1897,293 @@
+         }
+       }
+     },
++    "node_modules/@rolldown/binding-android-arm64": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-android-arm64/-/binding-android-arm64-1.1.5.tgz",
++      "integrity": "sha512-lZg8fqIv2v7FF237bwMgzGZEJvGL79/s5knJ/i6FmsGF4XXlzccZ4jb+TrFIxtSSxFtIpdsgrPZeMk1I9AFcyQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-darwin-arm64": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-darwin-arm64/-/binding-darwin-arm64-1.1.5.tgz",
++      "integrity": "sha512-51Bnx9pNiMRKSUNtBfySkNJ9vMU9Hh3I1ozDd6gyPPYzaXCfnptUcEZxXGYFn+ul2dtcMUiqGR1Yai2K10uoTw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-darwin-x64": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-darwin-x64/-/binding-darwin-x64-1.1.5.tgz",
++      "integrity": "sha512-Tm+gbfC0aHu1tBA/JvKQh32S0K6YgCHkiAF4/W6xX0K0RmNuc94VeK419dJoE65R5aRxmo+noZQSWrAMF6yb6g==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-freebsd-x64": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-freebsd-x64/-/binding-freebsd-x64-1.1.5.tgz",
++      "integrity": "sha512-JMzDKCCXq93YccG5gz3hvOs1oXRKAf0XYpfOS88e+wZrC8Iugj6j68867vrYZkvpDDpKn/KoKORThmchMpF6TA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-linux-arm-gnueabihf": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-1.1.5.tgz",
++      "integrity": "sha512-uML21j2K5TfPGutKxub+M+nLjZIrWjXQ5Grx4lCe/nimTj9B4L63zHpjXLl4y0L3mcm2htEQIb06oCG/szerNw==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-linux-arm64-gnu": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-1.1.5.tgz",
++      "integrity": "sha512-navSiuTMogvnQoZoM/v+l3ZWo50/NTwSHSzheABx/RCnmUPaKwq9qSo4Br2OYRs21+Fz8uFqITZM3H4opOB0/Q==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-linux-arm64-musl": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-linux-arm64-musl/-/binding-linux-arm64-musl-1.1.5.tgz",
++      "integrity": "sha512-lAryqH7IteztmCXQXk0etKj4wBQ7Gx5S6LjKhsgp9zb8I5bsuvU/2llH1hDQcjsFeqIsovMVN339/8pUDDBXxA==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-linux-ppc64-gnu": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-1.1.5.tgz",
++      "integrity": "sha512-fsK/sNBnxzBlL4O1JNrZakVQxPspqpED5dLtNsZS9oOKmtSpdNIzxH2kkol5HYTWJN47sE20ztMJPxfZ89qGOg==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-linux-s390x-gnu": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-1.1.5.tgz",
++      "integrity": "sha512-gLYb4BIadlfTOYT5gO503n8zQjXflgzpD0FcyKh0Mzx3rqCZKnHoJWV9xe1KXUJ5lx2JfcSHr/mhzS0PC/McAA==",
++      "cpu": [
++        "s390x"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-linux-x64-gnu": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-linux-x64-gnu/-/binding-linux-x64-gnu-1.1.5.tgz",
++      "integrity": "sha512-FjcpEKUyJygHgs1o50VYNvkt5+7Le/VEdYt0AkRpkL33MnyQfwr8l5mXwMmfmTbyMPr5vJLC+8/Gd9gXnwU1QQ==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-linux-x64-musl": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-linux-x64-musl/-/binding-linux-x64-musl-1.1.5.tgz",
++      "integrity": "sha512-Me+PfPI2TMeOQk0gYWfLQZtTktrmzbr8cDboqX83XKc7UrgAi55gF+2dUkWdxd19n55Essp2yeca+O9N5rBxHg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-openharmony-arm64": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-openharmony-arm64/-/binding-openharmony-arm64-1.1.5.tgz",
++      "integrity": "sha512-yc5WrLzXks6zCQfn9Oxr8pORKyl/pF+QjHmW/Qx3qu0oyrrNC+y2JLTU1E2rcWYAmzlnqngWXHQjy51VzW70Vw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openharmony"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-wasm32-wasi": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-wasm32-wasi/-/binding-wasm32-wasi-1.1.5.tgz",
++      "integrity": "sha512-VbQGPX2b4r48TAMIM2cjgluIM1HYutm4pcTEJsle7iEP7sB1dFqtPLBVbdLAZCxy1txCcPxf4QFf4v8uvltPqA==",
++      "cpu": [
++        "wasm32"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "@emnapi/core": "1.11.1",
++        "@emnapi/runtime": "1.11.1",
++        "@napi-rs/wasm-runtime": "^1.1.6"
++      },
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-wasm32-wasi/node_modules/@emnapi/core": {
++      "version": "1.11.1",
++      "resolved": "https://registry.npmjs.org/@emnapi/core/-/core-1.11.1.tgz",
++      "integrity": "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ==",
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "@emnapi/wasi-threads": "1.2.2",
++        "tslib": "^2.4.0"
++      }
++    },
++    "node_modules/@rolldown/binding-wasm32-wasi/node_modules/@emnapi/wasi-threads": {
++      "version": "1.2.2",
++      "resolved": "https://registry.npmjs.org/@emnapi/wasi-threads/-/wasi-threads-1.2.2.tgz",
++      "integrity": "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==",
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "tslib": "^2.4.0"
++      }
++    },
++    "node_modules/@rolldown/binding-win32-arm64-msvc": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-1.1.5.tgz",
++      "integrity": "sha512-gHv82k63z4qpV5+Q1y/12KrK0ltWBukVDI8nZcbT7Tt/ZlOIVwppazneq0F93oDxTo3IgAMEDIoQh3E2n6mVsw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/binding-win32-x64-msvc": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.1.5.tgz",
++      "integrity": "sha512-tTZuDBPw85tEN5PQi1pnEBzDy0Z49HtScLAbD5t6hyeU92A95pRWaSMw1GZZi/RwgSgUIl0xrSlXIT/9QzvYSA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      }
++    },
++    "node_modules/@rolldown/pluginutils": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/@rolldown/pluginutils/-/pluginutils-1.0.1.tgz",
++      "integrity": "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/@rtsao/scc": {
+       "version": "1.1.0",
+       "resolved": "https://registry.npmjs.org/@rtsao/scc/-/scc-1.1.0.tgz",
+@@ -2116,9 +2354,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2136,9 +2371,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2156,9 +2388,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2176,9 +2405,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2287,6 +2513,17 @@
+         "@types/node": "*"
+       }
+     },
++    "node_modules/@types/chai": {
++      "version": "5.2.3",
++      "resolved": "https://registry.npmjs.org/@types/chai/-/chai-5.2.3.tgz",
++      "integrity": "sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/deep-eql": "*",
++        "assertion-error": "^2.0.1"
++      }
++    },
+     "node_modules/@types/d3-array": {
+       "version": "3.2.2",
+       "resolved": "https://registry.npmjs.org/@types/d3-array/-/d3-array-3.2.2.tgz",
+@@ -2350,6 +2587,13 @@
+       "integrity": "sha512-Ps3T8E8dZDam6fUyNiMkekK3XUsaUEik+idO9/YjPtfj2qruF8tFBXS7XhtE4iIXBLxhmLjP3SXpLhVf21I9Lw==",
+       "license": "MIT"
+     },
++    "node_modules/@types/deep-eql": {
++      "version": "4.0.2",
++      "resolved": "https://registry.npmjs.org/@types/deep-eql/-/deep-eql-4.0.2.tgz",
++      "integrity": "sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/@types/estree": {
+       "version": "1.0.9",
+       "resolved": "https://registry.npmjs.org/@types/estree/-/estree-1.0.9.tgz",
+@@ -2825,9 +3069,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2842,9 +3083,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2859,9 +3097,6 @@
+         "loong64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2876,9 +3111,6 @@
+         "loong64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2893,9 +3125,6 @@
+         "ppc64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2910,9 +3139,6 @@
+         "riscv64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2927,9 +3153,6 @@
+         "riscv64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2944,9 +3167,6 @@
+         "s390x"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2961,9 +3181,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2978,9 +3195,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3045,33 +3259,146 @@
+         "win32"
+       ]
+     },
+-    "node_modules/@unrs/resolver-binding-win32-ia32-msvc": {
+-      "version": "1.12.2",
+-      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-win32-ia32-msvc/-/resolver-binding-win32-ia32-msvc-1.12.2.tgz",
+-      "integrity": "sha512-WD9sY00OfpHVGfsnHZoA8jVT+esS/Bg8z8jzxp5BnDCjjwsuKsPQrzswwpFy4J1AUJbXPRfkpcX0mXrzeXW79g==",
+-      "cpu": [
+-        "ia32"
+-      ],
++    "node_modules/@unrs/resolver-binding-win32-ia32-msvc": {
++      "version": "1.12.2",
++      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-win32-ia32-msvc/-/resolver-binding-win32-ia32-msvc-1.12.2.tgz",
++      "integrity": "sha512-WD9sY00OfpHVGfsnHZoA8jVT+esS/Bg8z8jzxp5BnDCjjwsuKsPQrzswwpFy4J1AUJbXPRfkpcX0mXrzeXW79g==",
++      "cpu": [
++        "ia32"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ]
++    },
++    "node_modules/@unrs/resolver-binding-win32-x64-msvc": {
++      "version": "1.12.2",
++      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-win32-x64-msvc/-/resolver-binding-win32-x64-msvc-1.12.2.tgz",
++      "integrity": "sha512-nAB74NfSNKknqQ1RrYj6uz8FcXEomu/MATJZxh/x+BArzN2U3JbOYC0APYzUIGhVY3m5hRxA8VPNdPBoG8txlA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ]
++    },
++    "node_modules/@vitest/expect": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@vitest/expect/-/expect-4.1.10.tgz",
++      "integrity": "sha512-YsCn+qAk1GWjQOWFEsEcL2gNQ0zmVmQu3T03qP6UyjhtmdtwtbuI+DASn/7iQB3HGTXkdBwGddzxPlmiql5vlA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@standard-schema/spec": "^1.1.0",
++        "@types/chai": "^5.2.2",
++        "@vitest/spy": "4.1.10",
++        "@vitest/utils": "4.1.10",
++        "chai": "^6.2.2",
++        "tinyrainbow": "^3.1.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/mocker": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.10.tgz",
++      "integrity": "sha512-v0xaezt+DKEmKfaxg133ldzADrwLGd7Ze1MfQQTYfvs8OqZIwbxyxaYURivwV7sWy5fqn3rH5uOrSp07bp44Ow==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/spy": "4.1.10",
++        "estree-walker": "^3.0.3",
++        "magic-string": "^0.30.21"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      },
++      "peerDependencies": {
++        "msw": "^2.4.9",
++        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0"
++      },
++      "peerDependenciesMeta": {
++        "msw": {
++          "optional": true
++        },
++        "vite": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/@vitest/pretty-format": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-4.1.10.tgz",
++      "integrity": "sha512-W1HsjSH4MXQ9YfmmhLAoIYf1HRfekQCGngeIgcei6MP5QQGWUe0gkopdZQaVCFO+JDJMrAJGwa5pRpNpvy4P8Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "tinyrainbow": "^3.1.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/runner": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@vitest/runner/-/runner-4.1.10.tgz",
++      "integrity": "sha512-IKI6kpIH+LmpROplyLwBBaCfMgOZOMsygVa6BARD6ahA04VRuJSa6OaVG7kRvSEMD870Vd91rSSw0eegtWyLGg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/utils": "4.1.10",
++        "pathe": "^2.0.3"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/snapshot": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-4.1.10.tgz",
++      "integrity": "sha512-xRkfOT1qpTAi/Ti4Y1LtfRc3kEuqxGw59eN2jN9pRWMtS/XDevekhcFSqvQqjUNGksfjMJu3Y+oJ+4Ypn2OaJw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/pretty-format": "4.1.10",
++        "@vitest/utils": "4.1.10",
++        "magic-string": "^0.30.21",
++        "pathe": "^2.0.3"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/spy": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@vitest/spy/-/spy-4.1.10.tgz",
++      "integrity": "sha512-PLf/Ugvoq5wO/b4rwYCR1h2PSIdXz7wnkQFMiUpLdtM7l6pqVFcQIBEHyT1+l+cj7mNwAfZHzqXqDyjvOuwbDw==",
+       "dev": true,
+       "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ]
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
+     },
+-    "node_modules/@unrs/resolver-binding-win32-x64-msvc": {
+-      "version": "1.12.2",
+-      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-win32-x64-msvc/-/resolver-binding-win32-x64-msvc-1.12.2.tgz",
+-      "integrity": "sha512-nAB74NfSNKknqQ1RrYj6uz8FcXEomu/MATJZxh/x+BArzN2U3JbOYC0APYzUIGhVY3m5hRxA8VPNdPBoG8txlA==",
+-      "cpu": [
+-        "x64"
+-      ],
++    "node_modules/@vitest/utils": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@vitest/utils/-/utils-4.1.10.tgz",
++      "integrity": "sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA==",
+       "dev": true,
+       "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ]
++      "dependencies": {
++        "@vitest/pretty-format": "4.1.10",
++        "convert-source-map": "^2.0.0",
++        "tinyrainbow": "^3.1.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
+     },
+     "node_modules/acorn": {
+       "version": "8.17.0",
+@@ -3326,6 +3653,16 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/assertion-error": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/assertion-error/-/assertion-error-2.0.1.tgz",
++      "integrity": "sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      }
++    },
+     "node_modules/ast-types-flow": {
+       "version": "0.0.8",
+       "resolved": "https://registry.npmjs.org/ast-types-flow/-/ast-types-flow-0.0.8.tgz",
+@@ -3585,6 +3922,16 @@
+       ],
+       "license": "CC-BY-4.0"
+     },
++    "node_modules/chai": {
++      "version": "6.2.2",
++      "resolved": "https://registry.npmjs.org/chai/-/chai-6.2.2.tgz",
++      "integrity": "sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/chalk": {
+       "version": "4.1.2",
+       "resolved": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz",
+@@ -4183,6 +4530,13 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/es-module-lexer": {
++      "version": "2.3.1",
++      "resolved": "https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-2.3.1.tgz",
++      "integrity": "sha512-shc1dbU90Yl/xq1QrC7QRtfcwURZuVRfPhZbDoldJ1cn1gzDvBaBWlv0eFolj5+0znnPJz5TXLxsN77X/12KTA==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/es-object-atoms": {
+       "version": "1.1.2",
+       "resolved": "https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.2.tgz",
+@@ -4715,6 +5069,16 @@
+         "node": ">=4.0"
+       }
+     },
++    "node_modules/estree-walker": {
++      "version": "3.0.3",
++      "resolved": "https://registry.npmjs.org/estree-walker/-/estree-walker-3.0.3.tgz",
++      "integrity": "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/estree": "^1.0.0"
++      }
++    },
+     "node_modules/esutils": {
+       "version": "2.0.3",
+       "resolved": "https://registry.npmjs.org/esutils/-/esutils-2.0.3.tgz",
+@@ -4731,6 +5095,16 @@
+       "integrity": "sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==",
+       "license": "MIT"
+     },
++    "node_modules/expect-type": {
++      "version": "1.4.0",
++      "resolved": "https://registry.npmjs.org/expect-type/-/expect-type-1.4.0.tgz",
++      "integrity": "sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "engines": {
++        "node": ">=12.0.0"
++      }
++    },
+     "node_modules/fast-deep-equal": {
+       "version": "3.1.3",
+       "resolved": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz",
+@@ -6122,9 +6496,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -6146,9 +6517,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -6170,9 +6538,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -6194,9 +6559,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -6401,9 +6763,9 @@
+       "license": "MIT"
+     },
+     "node_modules/nanoid": {
+-      "version": "3.3.15",
+-      "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.15.tgz",
+-      "integrity": "sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==",
++      "version": "3.3.16",
++      "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz",
++      "integrity": "sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==",
+       "funding": [
+         {
+           "type": "github",
+@@ -6703,6 +7065,20 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/obug": {
++      "version": "2.1.4",
++      "resolved": "https://registry.npmjs.org/obug/-/obug-2.1.4.tgz",
++      "integrity": "sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==",
++      "dev": true,
++      "funding": [
++        "https://github.com/sponsors/sxzz",
++        "https://opencollective.com/debug"
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=12.20.0"
++      }
++    },
+     "node_modules/optionator": {
+       "version": "0.9.4",
+       "resolved": "https://registry.npmjs.org/optionator/-/optionator-0.9.4.tgz",
+@@ -6833,6 +7209,13 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/pathe": {
++      "version": "2.0.3",
++      "resolved": "https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz",
++      "integrity": "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/picocolors": {
+       "version": "1.1.1",
+       "resolved": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+@@ -7250,6 +7633,40 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/rolldown": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/rolldown/-/rolldown-1.1.5.tgz",
++      "integrity": "sha512-t9z29cJjXf/vxQ8dyhCSpt6H6aSwHTk8cT5I3iy6SMXuFpk5mB6PL6XfC8PCwrPTx93udwKUm9HRteAlTGBLiA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@oxc-project/types": "=0.139.0",
++        "@rolldown/pluginutils": "^1.0.0"
++      },
++      "bin": {
++        "rolldown": "bin/cli.mjs"
++      },
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      },
++      "optionalDependencies": {
++        "@rolldown/binding-android-arm64": "1.1.5",
++        "@rolldown/binding-darwin-arm64": "1.1.5",
++        "@rolldown/binding-darwin-x64": "1.1.5",
++        "@rolldown/binding-freebsd-x64": "1.1.5",
++        "@rolldown/binding-linux-arm-gnueabihf": "1.1.5",
++        "@rolldown/binding-linux-arm64-gnu": "1.1.5",
++        "@rolldown/binding-linux-arm64-musl": "1.1.5",
++        "@rolldown/binding-linux-ppc64-gnu": "1.1.5",
++        "@rolldown/binding-linux-s390x-gnu": "1.1.5",
++        "@rolldown/binding-linux-x64-gnu": "1.1.5",
++        "@rolldown/binding-linux-x64-musl": "1.1.5",
++        "@rolldown/binding-openharmony-arm64": "1.1.5",
++        "@rolldown/binding-wasm32-wasi": "1.1.5",
++        "@rolldown/binding-win32-arm64-msvc": "1.1.5",
++        "@rolldown/binding-win32-x64-msvc": "1.1.5"
++      }
++    },
+     "node_modules/run-parallel": {
+       "version": "1.2.0",
+       "resolved": "https://registry.npmjs.org/run-parallel/-/run-parallel-1.2.0.tgz",
+@@ -7557,6 +7974,13 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/siginfo": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/siginfo/-/siginfo-2.0.0.tgz",
++      "integrity": "sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==",
++      "dev": true,
++      "license": "ISC"
++    },
+     "node_modules/source-map-js": {
+       "version": "1.2.1",
+       "resolved": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+@@ -7573,12 +7997,26 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/stackback": {
++      "version": "0.0.2",
++      "resolved": "https://registry.npmjs.org/stackback/-/stackback-0.0.2.tgz",
++      "integrity": "sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/standard-as-callback": {
+       "version": "2.1.0",
+       "resolved": "https://registry.npmjs.org/standard-as-callback/-/standard-as-callback-2.1.0.tgz",
+       "integrity": "sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A==",
+       "license": "MIT"
+     },
++    "node_modules/std-env": {
++      "version": "4.2.0",
++      "resolved": "https://registry.npmjs.org/std-env/-/std-env-4.2.0.tgz",
++      "integrity": "sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/stop-iteration-iterator": {
+       "version": "1.1.0",
+       "resolved": "https://registry.npmjs.org/stop-iteration-iterator/-/stop-iteration-iterator-1.1.0.tgz",
+@@ -7848,6 +8286,23 @@
+       "integrity": "sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==",
+       "license": "MIT"
+     },
++    "node_modules/tinybench": {
++      "version": "2.9.0",
++      "resolved": "https://registry.npmjs.org/tinybench/-/tinybench-2.9.0.tgz",
++      "integrity": "sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/tinyexec": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/tinyexec/-/tinyexec-1.2.4.tgz",
++      "integrity": "sha512-SHf/r48b7vOrjve9PxJo3MN5v5yuyjHvdUcrQffT3WXMUfnGmHDVbC4k3sHJaJTgZCwpUplIaAo5ANtMyp3YHg==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/tinyglobby": {
+       "version": "0.2.17",
+       "resolved": "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz",
+@@ -7896,6 +8351,16 @@
+         "url": "https://github.com/sponsors/jonschlinkert"
+       }
+     },
++    "node_modules/tinyrainbow": {
++      "version": "3.1.0",
++      "resolved": "https://registry.npmjs.org/tinyrainbow/-/tinyrainbow-3.1.0.tgz",
++      "integrity": "sha512-Bf+ILmBgretUrdJxzXM0SgXLZ3XfiaUuOj/IKQHuTXip+05Xn+uyEYdVg0kYDipTBcLrCVyUzAPz7QmArb0mmw==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=14.0.0"
++      }
++    },
+     "node_modules/to-regex-range": {
+       "version": "5.0.1",
+       "resolved": "https://registry.npmjs.org/to-regex-range/-/to-regex-range-5.0.1.tgz",
+@@ -8251,6 +8716,229 @@
+         "d3-timer": "^3.0.1"
+       }
+     },
++    "node_modules/vite": {
++      "version": "8.1.5",
++      "resolved": "https://registry.npmjs.org/vite/-/vite-8.1.5.tgz",
++      "integrity": "sha512-7ULLwsCdYx/nRyrpiEwvqb5TFHrMVZyBt+rg/OAXT7rgj/z+DtTDyKFeLAdDkubDVDKD8jOsndmy7m55XcfUsw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "lightningcss": "^1.32.0",
++        "picomatch": "^4.0.5",
++        "postcss": "^8.5.17",
++        "rolldown": "~1.1.5",
++        "tinyglobby": "^0.2.17"
++      },
++      "bin": {
++        "vite": "bin/vite.js"
++      },
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      },
++      "funding": {
++        "url": "https://github.com/vitejs/vite?sponsor=1"
++      },
++      "optionalDependencies": {
++        "fsevents": "~2.3.3"
++      },
++      "peerDependencies": {
++        "@types/node": "^20.19.0 || >=22.12.0",
++        "@vitejs/devtools": "^0.3.0",
++        "esbuild": "^0.27.0 || ^0.28.0",
++        "jiti": ">=1.21.0",
++        "less": "^4.0.0",
++        "sass": "^1.70.0",
++        "sass-embedded": "^1.70.0",
++        "stylus": ">=0.54.8",
++        "sugarss": "^5.0.0",
++        "terser": "^5.16.0",
++        "tsx": "^4.8.1",
++        "yaml": "^2.4.2"
++      },
++      "peerDependenciesMeta": {
++        "@types/node": {
++          "optional": true
++        },
++        "@vitejs/devtools": {
++          "optional": true
++        },
++        "esbuild": {
++          "optional": true
++        },
++        "jiti": {
++          "optional": true
++        },
++        "less": {
++          "optional": true
++        },
++        "sass": {
++          "optional": true
++        },
++        "sass-embedded": {
++          "optional": true
++        },
++        "stylus": {
++          "optional": true
++        },
++        "sugarss": {
++          "optional": true
++        },
++        "terser": {
++          "optional": true
++        },
++        "tsx": {
++          "optional": true
++        },
++        "yaml": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/vite/node_modules/picomatch": {
++      "version": "4.0.5",
++      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.5.tgz",
++      "integrity": "sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/jonschlinkert"
++      }
++    },
++    "node_modules/vite/node_modules/postcss": {
++      "version": "8.5.20",
++      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.20.tgz",
++      "integrity": "sha512-lW616l85ucIQL+FocMmL7pQFPqBmwejrCMg+iPxyImlrANNJG9NHq/RkyCZopDhd8C3LA03PHRJDjkbGu8vvug==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/postcss/"
++        },
++        {
++          "type": "tidelift",
++          "url": "https://tidelift.com/funding/github/npm/postcss"
++        },
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/ai"
++        }
++      ],
++      "license": "MIT",
++      "dependencies": {
++        "nanoid": "^3.3.16",
++        "picocolors": "^1.1.1",
++        "source-map-js": "^1.2.1"
++      },
++      "engines": {
++        "node": "^10 || ^12 || >=14"
++      }
++    },
++    "node_modules/vitest": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/vitest/-/vitest-4.1.10.tgz",
++      "integrity": "sha512-R9jUTe5S4Qb0HCd4TNqpC7oGcrMssMRGXLW80ubjWsW9VH5GF8y1Y0SFLY9AbqSk6nt0PnOx4H4WNJYZ13GUPw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/expect": "4.1.10",
++        "@vitest/mocker": "4.1.10",
++        "@vitest/pretty-format": "4.1.10",
++        "@vitest/runner": "4.1.10",
++        "@vitest/snapshot": "4.1.10",
++        "@vitest/spy": "4.1.10",
++        "@vitest/utils": "4.1.10",
++        "es-module-lexer": "^2.0.0",
++        "expect-type": "^1.3.0",
++        "magic-string": "^0.30.21",
++        "obug": "^2.1.1",
++        "pathe": "^2.0.3",
++        "picomatch": "^4.0.3",
++        "std-env": "^4.0.0-rc.1",
++        "tinybench": "^2.9.0",
++        "tinyexec": "^1.0.2",
++        "tinyglobby": "^0.2.15",
++        "tinyrainbow": "^3.1.0",
++        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0",
++        "why-is-node-running": "^2.3.0"
++      },
++      "bin": {
++        "vitest": "vitest.mjs"
++      },
++      "engines": {
++        "node": "^20.0.0 || ^22.0.0 || >=24.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      },
++      "peerDependencies": {
++        "@edge-runtime/vm": "*",
++        "@opentelemetry/api": "^1.9.0",
++        "@types/node": "^20.0.0 || ^22.0.0 || >=24.0.0",
++        "@vitest/browser-playwright": "4.1.10",
++        "@vitest/browser-preview": "4.1.10",
++        "@vitest/browser-webdriverio": "4.1.10",
++        "@vitest/coverage-istanbul": "4.1.10",
++        "@vitest/coverage-v8": "4.1.10",
++        "@vitest/ui": "4.1.10",
++        "happy-dom": "*",
++        "jsdom": "*",
++        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0"
++      },
++      "peerDependenciesMeta": {
++        "@edge-runtime/vm": {
++          "optional": true
++        },
++        "@opentelemetry/api": {
++          "optional": true
++        },
++        "@types/node": {
++          "optional": true
++        },
++        "@vitest/browser-playwright": {
++          "optional": true
++        },
++        "@vitest/browser-preview": {
++          "optional": true
++        },
++        "@vitest/browser-webdriverio": {
++          "optional": true
++        },
++        "@vitest/coverage-istanbul": {
++          "optional": true
++        },
++        "@vitest/coverage-v8": {
++          "optional": true
++        },
++        "@vitest/ui": {
++          "optional": true
++        },
++        "happy-dom": {
++          "optional": true
++        },
++        "jsdom": {
++          "optional": true
++        },
++        "vite": {
++          "optional": false
++        }
++      }
++    },
++    "node_modules/vitest/node_modules/picomatch": {
++      "version": "4.0.5",
++      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.5.tgz",
++      "integrity": "sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/jonschlinkert"
++      }
++    },
+     "node_modules/which": {
+       "version": "2.0.2",
+       "resolved": "https://registry.npmjs.org/which/-/which-2.0.2.tgz",
+@@ -8362,6 +9050,23 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/why-is-node-running": {
++      "version": "2.3.0",
++      "resolved": "https://registry.npmjs.org/why-is-node-running/-/why-is-node-running-2.3.0.tgz",
++      "integrity": "sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "siginfo": "^2.0.0",
++        "stackback": "0.0.2"
++      },
++      "bin": {
++        "why-is-node-running": "cli.js"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/word-wrap": {
+       "version": "1.2.5",
+       "resolved": "https://registry.npmjs.org/word-wrap/-/word-wrap-1.2.5.tgz",
+diff --git a/my-app/package.json b/my-app/package.json
+index b547f95..4be2719 100644
+--- a/my-app/package.json
++++ b/my-app/package.json
+@@ -6,7 +6,8 @@
+     "dev": "next dev",
+     "build": "next build",
+     "start": "next start",
+-    "lint": "eslint"
++    "lint": "eslint",
++    "test": "vitest run"
+   },
+   "prisma": {
+     "seed": "tsx prisma/seed.ts"
+@@ -47,6 +48,7 @@
+     "eslint-config-next": "16.2.9",
+     "tailwindcss": "^4",
+     "tsx": "^4.22.4",
+-    "typescript": "^5.9.3"
++    "typescript": "^5.9.3",
++    "vitest": "^4.1.10"
+   }
+ }

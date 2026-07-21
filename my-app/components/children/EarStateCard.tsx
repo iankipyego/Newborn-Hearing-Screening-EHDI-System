@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import {
-  type EarState,
+  type EarStateValue,
   type Ear,
   getEarStateLabel,
   getExpectedStage,
@@ -12,7 +12,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 
 interface EarStateCardProps {
   ear: Ear;
-  state: EarState;
+  state: EarStateValue;
   modality: string;
   patientId: string;
 }

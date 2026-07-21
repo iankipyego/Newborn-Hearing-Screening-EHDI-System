@@ -1,10 +1,10 @@
 'use client';
 
-import type { PatientFinalStatus, EarState } from '@/lib/pathway';
+import type { PatientPathwayStatus, EarStateValue } from '@/lib/pathway';
 
 type BadgeVariant = 'green' | 'blue' | 'amber' | 'purple' | 'red' | 'gray';
 
-const patientStatusColors: Record<PatientFinalStatus, BadgeVariant> = {
+const patientStatusColors: Record<PatientPathwayStatus, BadgeVariant> = {
   PASSED: 'green',
   IN_PROGRESS: 'blue',
   REFERRED_AUDIOLOGY: 'amber',
@@ -12,7 +12,7 @@ const patientStatusColors: Record<PatientFinalStatus, BadgeVariant> = {
   LOST_TO_FOLLOWUP: 'red',
 };
 
-const earStateColors: Record<EarState, BadgeVariant> = {
+const earStateColors: Record<EarStateValue, BadgeVariant> = {
   NOT_STARTED: 'gray',
   SCREEN_1_PASSED: 'green',
   SCREEN_1_FAILED: 'amber',
@@ -47,8 +47,8 @@ const dotColors: Record<BadgeVariant, string> = {
 interface StatusBadgeProps {
   label: string;
   variant?: BadgeVariant;
-  patientStatus?: PatientFinalStatus;
-  earState?: EarState;
+  patientStatus?: PatientPathwayStatus;
+  earState?: EarStateValue;
   size?: 'sm' | 'md';
 }
 
@@ -60,11 +60,12 @@ export function StatusBadge({
   size = 'sm',
 }: StatusBadgeProps) {
   const resolvedVariant: BadgeVariant =
-    variant ?? patientStatus
+    variant ??
+    (patientStatus
       ? patientStatusColors[patientStatus]
       : earState
         ? earStateColors[earState]
-        : 'gray';
+        : 'gray');
 
   const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';
 
