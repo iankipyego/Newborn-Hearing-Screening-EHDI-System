@@ -581,6 +581,53 @@ export default function ChildProfilePage() {
       )}
 
       {/* ════════════════════════════════════════════════════════
+          VISUAL INSPECTIONS (§2.1) — pre-OAE case history, per ear.
+          Distinct from OAE screening_events, but part of the same
+          record so the outcome (incl. REFER_MEDICAL) is visible here.
+          ════════════════════════════════════════════════════════ */}
+      {patient.visual_inspections && patient.visual_inspections.length > 0 && (
+        <section className="bg-white border border-gray-200 rounded-xl p-5">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">
+            Visual Inspections ({patient.visual_inspections.length})
+          </h2>
+          <div className="space-y-2">
+            {patient.visual_inspections.map((vi) => (
+              <div
+                key={vi.id}
+                className="flex items-center justify-between border border-gray-100 rounded-lg p-3 text-sm"
+              >
+                <div>
+                  <p className="font-medium">
+                    {vi.ear} ear —{" "}
+                    {vi.outcome === "REFER_MEDICAL"
+                      ? "Referred to medical follow-up"
+                      : vi.outcome.replace(/_/g, " ")}
+                  </p>
+                  {vi.finding_note && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {vi.finding_note}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {new Date(vi.inspected_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                    vi.outcome === "REFER_MEDICAL"
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-green-100 text-green-700"
+                  }`}
+                >
+                  {vi.outcome === "REFER_MEDICAL" ? "REFERRED" : "CLEARED"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
           SCREENING HISTORY (collapsible timeline)
           ════════════════════════════════════════════════════════ */}
       <section className="bg-white border border-gray-200 rounded-xl p-5">
@@ -817,11 +864,21 @@ export default function ChildProfilePage() {
                       ` · Resolved ${new Date(r.resolved_at).toLocaleDateString()}`}
                   </p>
                 </div>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-semibold ${formatReferralBadge(r.status)}`}
-                >
-                  {r.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  {r.status === "PENDING" && (
+                    <Link
+                      href={`/referrals/${r.id}/edit`}
+                      className="text-xs font-medium text-blue-600 hover:underline"
+                    >
+                      Resolve
+                    </Link>
+                  )}
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-semibold ${formatReferralBadge(r.status)}`}
+                  >
+                    {r.status}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

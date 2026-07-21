@@ -361,6 +361,15 @@ async function getSinglePatient(id: string, user: { id: string; role: string; si
     include: {
       consent_record: true,
       risk_factors: true,
+      // §2.1 — without these two, the child-profile page can never see
+      // that a visual inspection or an ear_pathway_state row exists, so
+      // it always falls back to deriving state from screening_events
+      // alone (blind to REFER_MEDICAL/PENDING_MEDICAL_CLEARANCE_PRESCREEN)
+      // and hasVisualInspection is permanently false — the UI then shows
+      // "Not Started" + "Record Visual Inspection" forever, even after
+      // the inspection (and any screening) has been recorded.
+      visual_inspections: { orderBy: { inspected_at: "asc" } },
+      ear_pathway_states: true,
       screening_events: { orderBy: { tested_at: "asc" } },
       referrals: { orderBy: { referred_at: "asc" } },
       diagnostic_evaluations: {

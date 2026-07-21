@@ -1,0 +1,105 @@
+diff --git a/my-app/app/(app)/children/[id]/page.tsx b/my-app/app/(app)/children/[id]/page.tsx
+index 0ada910..3fad630 100644
+--- a/my-app/app/(app)/children/[id]/page.tsx
++++ b/my-app/app/(app)/children/[id]/page.tsx
+@@ -580,6 +580,53 @@ export default function ChildProfilePage() {
+         </section>
+       )}
+ 
++      {/* ════════════════════════════════════════════════════════
++          VISUAL INSPECTIONS (§2.1) — pre-OAE case history, per ear.
++          Distinct from OAE screening_events, but part of the same
++          record so the outcome (incl. REFER_MEDICAL) is visible here.
++          ════════════════════════════════════════════════════════ */}
++      {patient.visual_inspections && patient.visual_inspections.length > 0 && (
++        <section className="bg-white border border-gray-200 rounded-xl p-5">
++          <h2 className="text-base font-semibold text-gray-800 mb-4">
++            Visual Inspections ({patient.visual_inspections.length})
++          </h2>
++          <div className="space-y-2">
++            {patient.visual_inspections.map((vi) => (
++              <div
++                key={vi.id}
++                className="flex items-center justify-between border border-gray-100 rounded-lg p-3 text-sm"
++              >
++                <div>
++                  <p className="font-medium">
++                    {vi.ear} ear —{" "}
++                    {vi.outcome === "REFER_MEDICAL"
++                      ? "Referred to medical follow-up"
++                      : vi.outcome.replace(/_/g, " ")}
++                  </p>
++                  {vi.finding_note && (
++                    <p className="text-xs text-gray-500 mt-0.5">
++                      {vi.finding_note}
++                    </p>
++                  )}
++                  <p className="text-xs text-gray-400 mt-0.5">
++                    {new Date(vi.inspected_at).toLocaleDateString()}
++                  </p>
++                </div>
++                <span
++                  className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
++                    vi.outcome === "REFER_MEDICAL"
++                      ? "bg-amber-100 text-amber-700"
++                      : "bg-green-100 text-green-700"
++                  }`}
++                >
++                  {vi.outcome === "REFER_MEDICAL" ? "REFERRED" : "CLEARED"}
++                </span>
++              </div>
++            ))}
++          </div>
++        </section>
++      )}
++
+       {/* ════════════════════════════════════════════════════════
+           SCREENING HISTORY (collapsible timeline)
+           ════════════════════════════════════════════════════════ */}
+@@ -817,11 +864,21 @@ export default function ChildProfilePage() {
+                       ` · Resolved ${new Date(r.resolved_at).toLocaleDateString()}`}
+                   </p>
+                 </div>
+-                <span
+-                  className={`px-2 py-0.5 rounded-full text-xs font-semibold ${formatReferralBadge(r.status)}`}
+-                >
+-                  {r.status}
+-                </span>
++                <div className="flex items-center gap-2">
++                  {r.status === "PENDING" && (
++                    <Link
++                      href={`/referrals/${r.id}/edit`}
++                      className="text-xs font-medium text-blue-600 hover:underline"
++                    >
++                      Resolve
++                    </Link>
++                  )}
++                  <span
++                    className={`px-2 py-0.5 rounded-full text-xs font-semibold ${formatReferralBadge(r.status)}`}
++                  >
++                    {r.status}
++                  </span>
++                </div>
+               </div>
+             ))}
+           </div>
+diff --git a/my-app/app/api/v1/patients/[[...route]]/route.ts b/my-app/app/api/v1/patients/[[...route]]/route.ts
+index 47badf9..e1cea2f 100644
+--- a/my-app/app/api/v1/patients/[[...route]]/route.ts
++++ b/my-app/app/api/v1/patients/[[...route]]/route.ts
+@@ -361,6 +361,15 @@ async function getSinglePatient(id: string, user: { id: string; role: string; si
+     include: {
+       consent_record: true,
+       risk_factors: true,
++      // §2.1 — without these two, the child-profile page can never see
++      // that a visual inspection or an ear_pathway_state row exists, so
++      // it always falls back to deriving state from screening_events
++      // alone (blind to REFER_MEDICAL/PENDING_MEDICAL_CLEARANCE_PRESCREEN)
++      // and hasVisualInspection is permanently false — the UI then shows
++      // "Not Started" + "Record Visual Inspection" forever, even after
++      // the inspection (and any screening) has been recorded.
++      visual_inspections: { orderBy: { inspected_at: "asc" } },
++      ear_pathway_states: true,
+       screening_events: { orderBy: { tested_at: "asc" } },
+       referrals: { orderBy: { referred_at: "asc" } },
+       diagnostic_evaluations: {
