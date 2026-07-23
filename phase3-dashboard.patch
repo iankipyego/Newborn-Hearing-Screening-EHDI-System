@@ -1,0 +1,160 @@
+diff --git a/my-app/app/(app)/dashboard/page.tsx b/my-app/app/(app)/dashboard/page.tsx
+index a77cf6c..29423ed 100644
+--- a/my-app/app/(app)/dashboard/page.tsx
++++ b/my-app/app/(app)/dashboard/page.tsx
+@@ -10,6 +10,7 @@ import {
+   Printer, FileText, MessageSquareWarning,
+ } from 'lucide-react';
+ import { NAV_BY_ROLE, ROLE_BADGE } from '@/lib/nav';
++import Button from '@/components/ui/Button';
+ import KPICard from '@/components/dashboard/KPICard';
+ import FunnelChart from '@/components/dashboard/FunnelChart';
+ import TrendChart from '@/components/dashboard/TrendChart';
+@@ -229,7 +230,7 @@ export default function DashboardPage() {
+   if (error) return (
+     <div className="flex flex-col items-center justify-center py-24 text-center">
+       <p className="text-sm text-gray-600 dark:text-fg-muted mb-4">{error}</p>
+-      <button onClick={() => { fetchedRef.current = false; }} className="px-4 py-2 text-xs font-semibold text-white bg-gray-800 dark:bg-accent rounded-lg hover:opacity-90">Retry</button>
++      <Button variant="primary" size="sm" onClick={() => { fetchedRef.current = false; }}>Retry</Button>
+     </div>
+   );
+ 
+@@ -281,7 +282,7 @@ export default function DashboardPage() {
+       {kpis.length > 0 && (
+         <div>
+           <h2 className="text-xs font-bold text-gray-400 dark:text-fg-muted uppercase tracking-wider mb-3">JCIH 1-3-6 Indicators</h2>
+-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
++          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+             {kpis.map((kpi) => <KPICard key={kpi.key} kpi={kpi} />)}
+           </div>
+         </div>
+diff --git a/my-app/components/dashboard/ActionNeededTable.tsx b/my-app/components/dashboard/ActionNeededTable.tsx
+index b2114e6..ca383e8 100644
+--- a/my-app/components/dashboard/ActionNeededTable.tsx
++++ b/my-app/components/dashboard/ActionNeededTable.tsx
+@@ -1,5 +1,7 @@
+ 'use client';
+ 
++import { useRouter } from 'next/navigation';
++import Link from 'next/link';
+ import type { ActionNeededItem } from '@/lib/dashboard/queries';
+ 
+ const STYLES: Record<string, string> = {
+@@ -11,6 +13,9 @@ const STYLES: Record<string, string> = {
+ };
+ 
+ export default function ActionNeededTable({ items }: { items: ActionNeededItem[] }) {
++  const router = useRouter();
++  const goToPatient = (patientId: string) => router.push(`/children/${patientId}`);
++
+   if (items.length === 0) return (
+     <div className="rounded-xl border border-gray-200 dark:border-surface-border bg-white dark:bg-surface-card p-5">
+       <h3 className="text-sm font-semibold text-gray-800 dark:text-fg mb-0.5">Action Needed</h3>
+@@ -34,7 +39,30 @@ export default function ActionNeededTable({ items }: { items: ActionNeededItem[]
+         </span>
+       </div>
+ 
+-      <div className="overflow-x-auto -mx-5 px-5">
++      {/* Phone: stacked cards — a table here would force horizontal scroll */}
++      <div className="md:hidden space-y-2">
++        {items.map((item) => (
++          <Link key={`${item.patient_id}-${item.issue}`}
++             href={`/children/${item.patient_id}`}
++             className="block rounded-lg border border-gray-100 dark:border-surface-border/50 p-3
++                        hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors
++                        focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
++            <div className="flex items-center justify-between gap-2 mb-1.5">
++              <span className="text-xs font-mono font-semibold text-teal-700 dark:text-accent-light">{item.research_id}</span>
++              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${STYLES[item.pathway_status] ?? STYLES.IN_PROGRESS}`}>
++                {item.pathway_status.replace(/_/g, ' ')}
++              </span>
++            </div>
++            <p className="text-xs text-gray-700 dark:text-fg mb-1.5">{item.issue}</p>
++            {item.days_overdue > 0
++              ? <span className={`text-xs font-bold ${item.days_overdue > 30 ? 'text-red-600 dark:text-red-400' : item.days_overdue > 14 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-fg-muted'}`}>{item.days_overdue}d overdue</span>
++              : <span className="text-xs text-gray-400 dark:text-fg-muted">Not overdue</span>}
++          </Link>
++        ))}
++      </div>
++
++      {/* Desktop/tablet: table */}
++      <div className="hidden md:block overflow-x-auto -mx-5 px-5">
+         <table className="w-full text-left">
+           <thead>
+             <tr className="border-b border-gray-100 dark:border-surface-border">
+@@ -47,8 +75,15 @@ export default function ActionNeededTable({ items }: { items: ActionNeededItem[]
+           <tbody>
+             {items.map((item) => (
+               <tr key={`${item.patient_id}-${item.issue}`}
+-                  className="border-b border-gray-50 dark:border-surface-border/50 last:border-0 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
+-                  onClick={() => (window.location.href = `/children/${item.patient_id}`)}>
++                  role="link"
++                  tabIndex={0}
++                  aria-label={`View record for ${item.research_id}`}
++                  className="border-b border-gray-50 dark:border-surface-border/50 last:border-0 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer
++                             focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
++                  onClick={() => goToPatient(item.patient_id)}
++                  onKeyDown={(e) => {
++                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPatient(item.patient_id); }
++                  }}>
+                 <td className="py-2.5 pr-4">
+                   <span className="text-xs font-mono font-semibold text-teal-700 dark:text-accent-light">{item.research_id}</span>
+                 </td>
+diff --git a/my-app/components/dashboard/FunnelChart.tsx b/my-app/components/dashboard/FunnelChart.tsx
+index e2042a9..1ac35a7 100644
+--- a/my-app/components/dashboard/FunnelChart.tsx
++++ b/my-app/components/dashboard/FunnelChart.tsx
+@@ -5,7 +5,10 @@ import {
+ } from 'recharts';
+ import type { FunnelStage } from '@/lib/dashboard/queries';
+ 
+-const COLORS = ['#0d9488', '#14b8a6', '#f59e0b', '#f97316', '#ef4444', '#dc2626'];
++const COLORS = [
++  'var(--color-accent)', 'var(--color-accent-light)', 'var(--color-warn)',
++  'var(--color-orange-500)', 'var(--color-red-500)', 'var(--color-red-600)',
++];
+ 
+ function Tip({ active, payload }: { active?: boolean; payload?: Array<{ payload: FunnelStage }> }) {
+   if (!active || !payload?.length) return null;
+diff --git a/my-app/components/dashboard/OperationalChart.tsx b/my-app/components/dashboard/OperationalChart.tsx
+index 1e8da5c..948ff84 100644
+--- a/my-app/components/dashboard/OperationalChart.tsx
++++ b/my-app/components/dashboard/OperationalChart.tsx
+@@ -6,7 +6,8 @@ import {
+ import type { DailyOperational, MissedBreakdown } from '@/lib/dashboard/queries';
+ 
+ const MISSED_COLORS: Record<keyof MissedBreakdown, string> = {
+-  discharged_early: '#f59e0b', refused: '#ef4444', equipment_down: '#8b5cf6', staff_absent: '#6b7280',
++  discharged_early: 'var(--color-warn)', refused: 'var(--color-red-500)',
++  equipment_down: 'var(--color-violet-500)', staff_absent: 'var(--color-gray-500)',
+ };
+ const MISSED_LABELS: Record<keyof MissedBreakdown, string> = {
+   discharged_early: 'Discharged early', refused: 'Refused', equipment_down: 'Equipment down', staff_absent: 'Staff absent',
+@@ -50,8 +51,8 @@ export default function OperationalChart({ daily, missed_breakdown }: { daily: D
+             <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--chart-axis)' }} tickLine={false} axisLine={{ stroke: 'var(--chart-grid)' }} interval={4} />
+             <YAxis tick={{ fontSize: 10, fill: 'var(--chart-axis)' }} tickLine={false} axisLine={false} />
+             <Tooltip content={<DayTip />} />
+-            <Bar dataKey="total_screened" fill="#0d9488" radius={[3, 3, 0, 0]} barSize={10} />
+-            <Bar dataKey="total_missed" fill="#fca5a5" radius={[3, 3, 0, 0]} barSize={10} />
++            <Bar dataKey="total_screened" fill="var(--color-accent)" radius={[3, 3, 0, 0]} barSize={10} />
++            <Bar dataKey="total_missed" fill="var(--color-red-300)" radius={[3, 3, 0, 0]} barSize={10} />
+           </BarChart>
+         </ResponsiveContainer>
+       ) : (
+diff --git a/my-app/components/dashboard/TrendChart.tsx b/my-app/components/dashboard/TrendChart.tsx
+index c98aca8..ca2ec59 100644
+--- a/my-app/components/dashboard/TrendChart.tsx
++++ b/my-app/components/dashboard/TrendChart.tsx
+@@ -53,9 +53,9 @@ export default function TrendChart({ data }: { data: TrendPoint[] }) {
+           <Tooltip content={<Tip />} />
+           <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }}
+             formatter={(v: string) => ({ coverage_rate: 'Coverage', referral_rate: 'Referral rate', loss_to_followup_rate: 'LTFU rate' }[v] ?? v)} />
+-          <Line type="monotone" dataKey="coverage_rate" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+-          <Line type="monotone" dataKey="referral_rate" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+-          <Line type="monotone" dataKey="loss_to_followup_rate" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
++          <Line type="monotone" dataKey="coverage_rate" stroke="var(--color-accent)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
++          <Line type="monotone" dataKey="referral_rate" stroke="var(--color-warn)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
++          <Line type="monotone" dataKey="loss_to_followup_rate" stroke="var(--color-red-500)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+         </LineChart>
+       </ResponsiveContainer>
+     </div>

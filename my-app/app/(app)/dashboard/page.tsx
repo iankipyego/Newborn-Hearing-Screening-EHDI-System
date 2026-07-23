@@ -10,6 +10,7 @@ import {
   Printer, FileText, MessageSquareWarning,
 } from 'lucide-react';
 import { NAV_BY_ROLE, ROLE_BADGE } from '@/lib/nav';
+import Button from '@/components/ui/Button';
 import KPICard from '@/components/dashboard/KPICard';
 import FunnelChart from '@/components/dashboard/FunnelChart';
 import TrendChart from '@/components/dashboard/TrendChart';
@@ -229,7 +230,7 @@ export default function DashboardPage() {
   if (error) return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <p className="text-sm text-gray-600 dark:text-fg-muted mb-4">{error}</p>
-      <button onClick={() => { fetchedRef.current = false; }} className="px-4 py-2 text-xs font-semibold text-white bg-gray-800 dark:bg-accent rounded-lg hover:opacity-90">Retry</button>
+      <Button variant="primary" size="sm" onClick={() => { fetchedRef.current = false; }}>Retry</Button>
     </div>
   );
 
@@ -281,7 +282,7 @@ export default function DashboardPage() {
       {kpis.length > 0 && (
         <div>
           <h2 className="text-xs font-bold text-gray-400 dark:text-fg-muted uppercase tracking-wider mb-3">JCIH 1-3-6 Indicators</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
             {kpis.map((kpi) => <KPICard key={kpi.key} kpi={kpi} />)}
           </div>
         </div>

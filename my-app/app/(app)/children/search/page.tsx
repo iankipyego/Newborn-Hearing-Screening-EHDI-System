@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { Search, X, ArrowUpDown, ChevronUp, ChevronDown, UserPlus } from "lucide-react";
+import Button from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfirmIdentityModal } from "@/components/children/ConfirmIdentityModal";
 import { getPatientStatusLabel } from "@/lib/pathway";
@@ -17,12 +20,29 @@ interface SearchResult {
   pathway_status: string;
 }
 
+type SortField = "research_id" | "date_of_birth" | "sex" | "mother_name" | "hospital_number" | "pathway_status";
+type SortDir = "asc" | "desc";
+
+const SORT_OPTIONS: { field: SortField; dir: SortDir; label: string }[] = [
+  { field: "research_id", dir: "asc", label: "Research ID (A–Z)" },
+  { field: "research_id", dir: "desc", label: "Research ID (Z–A)" },
+  { field: "date_of_birth", dir: "desc", label: "Date of Birth (Newest)" },
+  { field: "date_of_birth", dir: "asc", label: "Date of Birth (Oldest)" },
+  { field: "mother_name", dir: "asc", label: "Mother (A–Z)" },
+  { field: "mother_name", dir: "desc", label: "Mother (Z–A)" },
+  { field: "hospital_number", dir: "asc", label: "Hospital # (A–Z)" },
+  { field: "pathway_status", dir: "asc", label: "Status (A–Z)" },
+];
+
 export default function ChildSearchPage() {
+  const router = useRouter();
   const [allRecords, setAllRecords] = useState<SearchResult[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmPatient, setConfirmPatient] = useState<SearchResult | null>(null);
+  const [sortField, setSortField] = useState<SortField>("research_id");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const inputRef = useRef<HTMLInputElement>(null);
 
   // ── Load all records on mount ──
@@ -56,8 +76,8 @@ export default function ChildSearchPage() {
     loadAll();
   }, []);
 
-  // ── Client-side filter — instant, no API calls ──
-  const displayRecords = query.length >= 2
+  // ── Client-side filter — instant, no API calls, so no reason to wait for a 2nd character ──
+  const displayRecords = query.length >= 1
     ? allRecords.filter((r) => {
         const q = query.toLowerCase();
         return (
@@ -72,15 +92,61 @@ export default function ChildSearchPage() {
     : allRecords;
 
   const hasResults = displayRecords.length > 0;
-  const isFiltering = query.length >= 2;
+  const isFiltering = query.length >= 1;
+
+  // ── Client-side sort — same records, no backend involved ──
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedRecords = [...displayRecords].sort((a, b) => {
+    let cmp = 0;
+    switch (sortField) {
+      case "research_id": cmp = (a.research_id ?? "").localeCompare(b.research_id ?? ""); break;
+      case "date_of_birth": cmp = a.date_of_birth.localeCompare(b.date_of_birth); break;
+      case "sex": cmp = a.sex.localeCompare(b.sex); break;
+      case "mother_name": cmp = (a.mother_name ?? "").localeCompare(b.mother_name ?? ""); break;
+      case "hospital_number": cmp = (a.hospital_number ?? "").localeCompare(b.hospital_number ?? ""); break;
+      case "pathway_status": cmp = a.pathway_status.localeCompare(b.pathway_status); break;
+    }
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  function SortHeader({ field, label, align }: { field: SortField; label: string; align?: "right" }) {
+    const active = sortField === field;
+    return (
+      <th
+        className={`px-4 py-3 ${align === "right" ? "text-right" : ""}`}
+        aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(field)}
+          className={`inline-flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded
+                      ${active ? "text-gray-700 dark:text-fg" : "text-gray-500 dark:text-fg-muted"}
+                      hover:text-gray-700 dark:hover:text-fg`}
+        >
+          {label}
+          {active
+            ? (sortDir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />)
+            : <ArrowUpDown size={12} className="opacity-40" />}
+        </button>
+      </th>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
+      <div className="mb-6 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Children</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-fg">Children</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-fg-muted">
             {loading
               ? "Loading records..."
               : `${allRecords.length} total records`}
@@ -88,20 +154,16 @@ export default function ChildSearchPage() {
               ` — showing ${displayRecords.length} match${displayRecords.length !== 1 ? "es" : ""}`}
           </p>
         </div>
-        <a
-          href="/children/new"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          + Register Child
-        </a>
+        <Button variant="primary" onClick={() => router.push("/children/new")}>
+          <UserPlus size={16} />
+          Register Child
+        </Button>
       </div>
 
       {/* Search input */}
       <div className="relative mb-4">
         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-          <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
+          <Search className="h-5 w-5 text-gray-400 dark:text-fg-muted" strokeWidth={2} />
         </div>
         <input
           ref={inputRef}
@@ -109,24 +171,27 @@ export default function ChildSearchPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter by ID, name, hospital number, date..."
-          className="w-full rounded-lg border border-gray-300 bg-white py-3 pl-12 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          className="w-full rounded-lg border border-gray-300 dark:border-surface-border bg-white dark:bg-surface-card
+                     py-3 pl-12 pr-10 text-sm text-gray-900 dark:text-fg placeholder:text-gray-400 dark:placeholder:text-fg-muted
+                     focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
           autoComplete="off"
         />
-        {query.length >= 2 && (
-          <button
+        {query.length >= 1 && (
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setQuery("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            aria-label="Clear search"
+            className="absolute right-2 top-1/2 h-8 w-8 -translate-y-1/2 !px-0 rounded-full"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         )}
       </div>
 
       {/* Error */}
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
@@ -134,77 +199,106 @@ export default function ChildSearchPage() {
       {/* Loading */}
       {loading && (
         <div className="py-16 text-center">
-          <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-          <p className="mt-3 text-sm text-gray-400">Loading children...</p>
+          <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-300 dark:border-surface-border border-t-accent" />
+          <p className="mt-3 text-sm text-gray-400 dark:text-fg-muted">Loading children...</p>
         </div>
       )}
 
       {/* Empty — no records at all */}
       {!loading && !error && allRecords.length === 0 && (
-        <div className="rounded-lg border border-dashed border-gray-300 py-16 text-center">
-          <svg className="mx-auto h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+        <div className="rounded-lg border border-dashed border-gray-300 dark:border-surface-border py-16 text-center">
+          <svg className="mx-auto h-10 w-10 text-gray-300 dark:text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0" />
           </svg>
-          <p className="mt-3 text-sm text-gray-500">No children registered yet</p>
-          <a href="/children/new" className="mt-3 inline-block text-sm text-blue-600 hover:underline">
+          <p className="mt-3 text-sm text-gray-500 dark:text-fg-muted">No children registered yet</p>
+          <Button variant="ghost" size="sm" className="mt-3" onClick={() => router.push("/children/new")}>
             Register the first child →
-          </a>
+          </Button>
         </div>
       )}
 
       {/* Filtered — no matches */}
       {!loading && isFiltering && !hasResults && (
-        <div className="rounded-lg border border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">
+        <div className="rounded-lg border border-gray-200 dark:border-surface-border bg-white dark:bg-surface-card py-12 text-center">
+          <p className="text-sm text-gray-500 dark:text-fg-muted">
             No children found matching &quot;{query}&quot;
           </p>
-          <button
-            onClick={() => setQuery("")}
-            className="mt-2 text-sm text-blue-600 hover:underline"
-          >
+          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setQuery("")}>
             Clear filter
-          </button>
+          </Button>
+        </div>
+      )}
+
+      {/* Mobile sort control — no table headers to click on phone */}
+      {!loading && hasResults && (
+        <div className="md:hidden mb-3">
+          <label htmlFor="mobile-sort" className="sr-only">Sort by</label>
+          <select
+            id="mobile-sort"
+            value={`${sortField}:${sortDir}`}
+            onChange={(e) => {
+              const [field, dir] = e.target.value.split(":") as [SortField, SortDir];
+              setSortField(field);
+              setSortDir(dir);
+            }}
+            className="w-full rounded-lg border border-gray-300 dark:border-surface-border bg-white dark:bg-surface-card
+                       py-2 px-3 text-sm text-gray-700 dark:text-fg
+                       focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={`${opt.field}:${opt.dir}`} value={`${opt.field}:${opt.dir}`}>
+                Sort: {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
       {/* Results table */}
       {!loading && hasResults && (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-surface-border bg-white dark:bg-surface-card">
           {/* Desktop table */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                  <th className="px-4 py-3">Research ID</th>
-                  <th className="px-4 py-3">Date of Birth</th>
-                  <th className="px-4 py-3">Sex</th>
-                  <th className="px-4 py-3">Mother</th>
-                  <th className="px-4 py-3">Hospital #</th>
-                  <th className="px-4 py-3">Status</th>
+                <tr className="border-b border-gray-100 dark:border-surface-border bg-gray-50 dark:bg-white/[0.02] text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-fg-muted">
+                  <SortHeader field="research_id" label="Research ID" />
+                  <SortHeader field="date_of_birth" label="Date of Birth" />
+                  <SortHeader field="sex" label="Sex" />
+                  <SortHeader field="mother_name" label="Mother" />
+                  <SortHeader field="hospital_number" label="Hospital #" />
+                  <SortHeader field="pathway_status" label="Status" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {displayRecords.map((patient) => (
+              <tbody className="divide-y divide-gray-50 dark:divide-surface-border/50">
+                {sortedRecords.map((patient) => (
                   <tr
                     key={patient.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View record for ${patient.research_id ?? patient.mother_name ?? "patient"}`}
                     onClick={() => setConfirmPatient(patient)}
-                    className="cursor-pointer hover:bg-blue-50/40 transition-colors"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setConfirmPatient(patient); }
+                    }}
+                    className="cursor-pointer hover:bg-accent/5 dark:hover:bg-white/[0.02] transition-colors
+                               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                   >
-                    <td className="px-4 py-3 font-mono font-medium text-gray-900">
+                    <td className="px-4 py-3 font-mono font-medium text-gray-900 dark:text-fg">
                       {patient.research_id ?? "—"}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">
+                    <td className="px-4 py-3 text-gray-600 dark:text-fg-muted">
                       {new Date(patient.date_of_birth).toLocaleDateString("en-GB", {
                         day: "numeric",
                         month: "short",
                         year: "numeric",
                       })}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{patient.sex}</td>
-                    <td className="px-4 py-3 text-gray-900 truncate max-w-[200px]">
+                    <td className="px-4 py-3 text-gray-600 dark:text-fg-muted">{patient.sex}</td>
+                    <td className="px-4 py-3 text-gray-900 dark:text-fg truncate max-w-[200px]">
                       {patient.mother_name ?? "—"}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">
+                    <td className="px-4 py-3 text-gray-500 dark:text-fg-muted font-mono text-xs">
                       {patient.hospital_number ?? "—"}
                     </td>
                     <td className="px-4 py-3">
@@ -224,19 +318,20 @@ export default function ChildSearchPage() {
           </div>
 
           {/* Mobile cards */}
-          <div className="md:hidden divide-y divide-gray-100">
-            {displayRecords.map((patient) => (
+          <div className="md:hidden divide-y divide-gray-100 dark:divide-surface-border/50">
+            {sortedRecords.map((patient) => (
               <button
                 key={patient.id}
                 onClick={() => setConfirmPatient(patient)}
-                className="w-full p-4 text-left hover:bg-blue-50/40 transition-colors"
+                className="w-full p-4 text-left hover:bg-accent/5 dark:hover:bg-white/[0.02] transition-colors
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="font-mono text-sm font-semibold text-gray-900">
+                    <p className="font-mono text-sm font-semibold text-gray-900 dark:text-fg">
                       {patient.research_id ?? "—"}
                     </p>
-                    <p className="mt-0.5 text-xs text-gray-500">
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-fg-muted">
                       {new Date(patient.date_of_birth).toLocaleDateString("en-GB", {
                         day: "numeric",
                         month: "short",
@@ -244,7 +339,7 @@ export default function ChildSearchPage() {
                       })}{" "}
                       · {patient.sex}
                     </p>
-                    <p className="mt-1 truncate text-sm text-gray-700">
+                    <p className="mt-1 truncate text-sm text-gray-700 dark:text-fg">
                       {patient.mother_name ?? "—"}
                     </p>
                   </div>

@@ -6,7 +6,8 @@ import {
 import type { DailyOperational, MissedBreakdown } from '@/lib/dashboard/queries';
 
 const MISSED_COLORS: Record<keyof MissedBreakdown, string> = {
-  discharged_early: '#f59e0b', refused: '#ef4444', equipment_down: '#8b5cf6', staff_absent: '#6b7280',
+  discharged_early: 'var(--color-warn)', refused: 'var(--color-red-500)',
+  equipment_down: 'var(--color-violet-500)', staff_absent: 'var(--color-gray-500)',
 };
 const MISSED_LABELS: Record<keyof MissedBreakdown, string> = {
   discharged_early: 'Discharged early', refused: 'Refused', equipment_down: 'Equipment down', staff_absent: 'Staff absent',
@@ -50,8 +51,8 @@ export default function OperationalChart({ daily, missed_breakdown }: { daily: D
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--chart-axis)' }} tickLine={false} axisLine={{ stroke: 'var(--chart-grid)' }} interval={4} />
             <YAxis tick={{ fontSize: 10, fill: 'var(--chart-axis)' }} tickLine={false} axisLine={false} />
             <Tooltip content={<DayTip />} />
-            <Bar dataKey="total_screened" fill="#0d9488" radius={[3, 3, 0, 0]} barSize={10} />
-            <Bar dataKey="total_missed" fill="#fca5a5" radius={[3, 3, 0, 0]} barSize={10} />
+            <Bar dataKey="total_screened" fill="var(--color-accent)" radius={[3, 3, 0, 0]} barSize={10} />
+            <Bar dataKey="total_missed" fill="var(--color-red-300)" radius={[3, 3, 0, 0]} barSize={10} />
           </BarChart>
         </ResponsiveContainer>
       ) : (

@@ -27,12 +27,12 @@ const earStateColors: Record<EarStateValue, BadgeVariant> = {
 };
 
 const bgColors: Record<BadgeVariant, string> = {
-  green: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-  blue: 'bg-blue-50 text-blue-800 border-blue-200',
-  amber: 'bg-amber-50 text-amber-800 border-amber-200',
-  purple: 'bg-purple-50 text-purple-800 border-purple-200',
-  red: 'bg-red-50 text-red-800 border-red-200',
-  gray: 'bg-gray-50 text-gray-600 border-gray-200',
+  green: 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40',
+  blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800/40',
+  amber: 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/40',
+  purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-800/40',
+  red: 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 border-red-200 dark:border-red-800/40',
+  gray: 'bg-gray-50 dark:bg-surface-hover text-gray-600 dark:text-fg-muted border-gray-200 dark:border-surface-border',
 };
 
 const dotColors: Record<BadgeVariant, string> = {

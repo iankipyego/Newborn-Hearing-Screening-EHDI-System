@@ -16,6 +16,12 @@
 // path (§17.2 rows 7-10). An AUDIOLOGIST referral is closed by a
 // diagnostic evaluation instead (RESCREEN_FAILED -> DIAGNOSED), not by a
 // status change here — see the diagnostic-evaluations route.
+//
+// Manual referral creation (POST) lives at
+// app/api/v1/children/[id]/referrals/route.ts instead of here — route[0]
+// in this file means a referral ID for GET/PATCH, so reusing that same
+// position as a patient ID for POST would make the same path segment mean
+// two different kinds of entity depending on HTTP verb.
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth, authErrResponse } from "@/lib/auth/requireAuth";

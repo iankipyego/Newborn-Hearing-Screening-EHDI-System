@@ -115,6 +115,36 @@ export const PatientCreateSchema = z.object({
 
 export type PatientCreateInput = z.infer<typeof PatientCreateSchema>;
 
+// ---------------------------------------------------------------------------
+// Consent — standalone create/update, for patients registered without one
+// (e.g. PAPER_BACKUP entry) or whose consent status needs correcting.
+// Same field rules as PatientCreateSchema's Section C.
+// ---------------------------------------------------------------------------
+export const ConsentUpsertSchema = z.object({
+  consent_status: ConsentStatusSchema,
+  consent_form_version: z.string().min(1).max(50),
+  witness_name: z.string().max(200).nullable().optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Risk factors — standalone create/update, for patients registered without
+// one. Same field rules as PatientCreateSchema's Section D.
+// ---------------------------------------------------------------------------
+export const RiskFactorUpsertSchema = z.object({
+  risk_nicu_admission: z.boolean(),
+  risk_prematurity_under_37wk: z.boolean(),
+  risk_hyperbilirubinemia_treated: z.boolean(),
+  risk_ototoxic_drug_exposure: z.boolean(),
+  risk_craniofacial_anomaly: z.boolean(),
+  risk_family_history_hearing_loss: z.boolean(),
+  risk_birth_asphyxia: z.boolean(),
+  risk_congenital_infection_torch: z.boolean(),
+  risk_syndrome_associated_with_hl: z.boolean(),
+  risk_mechanical_ventilation_over_5d: z.boolean(),
+  risk_bacterial_meningitis: z.boolean(),
+  risk_additional_notes: z.string().max(2000).nullable().optional(),
+});
+
 // Patient list query params
 export const PatientListQuerySchema = z.object({
   page: z.coerce.number().min(1).default(1),      // add .default(1)

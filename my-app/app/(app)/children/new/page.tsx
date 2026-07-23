@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, FormProvider, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Checkbox from '@/components/ui/Checkbox';
 import Alert from '@/components/ui/Alert';
+import Button from '@/components/ui/Button';
 import { PatientCreateSchema, type PatientCreateInput } from '@/lib/validation/schemas';
 import { ChevronLeft, ChevronRight, Send, RotateCcw, AlertTriangle, CheckCircle } from 'lucide-react';
 
@@ -158,6 +159,52 @@ export default function RegisterChildPage() {
     survey_delivery_channel: watch('survey_delivery_channel'),
   };
 
+  // ── Sticky nav / scroll-spy: which section is under the sticky bar right now ──
+  const [activeKey, setActiveKey] = useState<string>(STEPS[0].key);
+  const sectionRefs = useRef<Partial<Record<string, HTMLElement>>>({});
+
+  const registerSectionRef = useCallback(
+    (key: string) => (el: HTMLElement | null) => {
+      if (el) sectionRefs.current[key] = el;
+    },
+    []
+  );
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length === 0) return;
+        const topmost = visible.reduce((a, b) =>
+          a.boundingClientRect.top < b.boundingClientRect.top ? a : b
+        );
+        const key = topmost.target.getAttribute('data-step-key');
+        if (key) setActiveKey(key);
+      },
+      { rootMargin: '-112px 0px -65% 0px', threshold: [0, 0.1, 0.25] }
+    );
+    STEPS.forEach((step) => {
+      const el = sectionRefs.current[step.key];
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollToSection = (key: string) => {
+    sectionRefs.current[key]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // ── Which sections currently have a validation error, so the sticky nav can flag them ──
+  const erroredStepKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const fieldName of Object.keys(errors)) {
+      for (const [stepKey, fields] of Object.entries(FIELDS_PER_STEP)) {
+        if ((fields as string[]).includes(fieldName)) keys.add(stepKey);
+      }
+    }
+    return keys;
+  }, [errors]);
+
   // ── Auto-suggest logic (visual only — server also computes these) ──
   function isAutoSuggested(rf: typeof RISK_FACTORS[0]): boolean {
     if (rf.autoCondition === null) return false;
@@ -231,9 +278,30 @@ export default function RegisterChildPage() {
       setSubmitting(false);
     }
   }, (validationErrors) => {
-    for (const [field, err] of Object.entries(validationErrors)) {
-      console.log(`Validation failed on "${field}": ${(err as any)?.message} (type: ${(err as any)?.type})`);
+    // Data entry errors can be anywhere in the five sections. Rather than
+    // relying on the clerk to scroll up and hunt for them, jump straight to
+    // the first invalid field and mark its section in the sticky nav (see
+    // erroredStepKeys) so the error is visible without scrolling to the top.
+    const firstField = Object.keys(validationErrors)[0];
+    if (!firstField) return;
+
+    const ownerStep = Object.entries(FIELDS_PER_STEP).find(([, fields]) =>
+      (fields as string[]).includes(firstField)
+    )?.[0];
+    if (ownerStep) {
+      const ownerIndex = STEPS.findIndex((s) => s.key === ownerStep);
+      if (ownerIndex !== -1) setCurrentStep(ownerIndex);
     }
+
+    requestAnimationFrame(() => {
+      const el = document.getElementById(firstField);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        (el as HTMLElement).focus?.();
+      } else if (ownerStep) {
+        scrollToSection(ownerStep);
+      }
+    });
   });
 
   // ── Reset ──
@@ -259,13 +327,13 @@ export default function RegisterChildPage() {
           </div>
           <p className="text-2xl font-mono font-bold text-teal-700 dark:text-accent-light">{result.research_id}</p>
         </div>
-        <div className="flex items-center justify-center gap-3">
-          <button onClick={handleReset} className="btn btn-ghost">
+        <div className="flex flex-col-reverse sm:flex-row items-center justify-center gap-3">
+          <Button variant="ghost" onClick={handleReset}>
             <RotateCcw size={16} /> Register Another
-          </button>
-          <button onClick={() => router.push(`/children/search?q=${result.research_id}`)} className="btn btn-primary">
+          </Button>
+          <Button variant="primary" onClick={() => router.push(`/children/search?q=${result.research_id}`)}>
             <Send size={16} /> View Record
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -283,19 +351,46 @@ export default function RegisterChildPage() {
           </p>
         </div>
 
-        {/* Progress bar */}
-        <div className="flex items-center gap-2 mb-8">
-          {effectiveSteps.map((step, i) => (
-            <div key={step.key} className="flex items-center gap-2 flex-1">
-              <div className={`h-2 rounded-full flex-1 ${i <= effectiveCurrentStep ? 'bg-accent' : 'bg-gray-200 dark:bg-surface-border'}`} />
-              <span className={`text-xs font-medium w-6 text-right ${i === effectiveCurrentStep ? 'text-accent' : 'text-gray-400 dark:text-fg-muted'}`}>
-                {i + 1}
-              </span>
-              {i < effectiveSteps.length - 1 && (
-                <ChevronRight size={14} className="text-gray-300 dark:text-surface-border shrink-0" />
-              )}
-            </div>
-          ))}
+        {/* Progress bar — sticky under the app TopBar; the filled portion and the
+            highlighted number both track activeKey (the section currently under
+            the sticky bar as you scroll), not just the Next/Back step state. */}
+        <div
+          className="sticky top-0 z-20 flex items-center gap-2 py-3 mb-8
+            bg-gray-50/95 dark:bg-surface/95 backdrop-blur-sm
+            border-b border-gray-200 dark:border-surface-border"
+        >
+          {effectiveSteps.map((step, i) => {
+            const activeIndex = effectiveSteps.findIndex((s) => s.key === activeKey);
+            const isActive = step.key === activeKey;
+            const isFilled = i <= (activeIndex === -1 ? effectiveCurrentStep : activeIndex);
+            const hasError = erroredStepKeys.has(step.key);
+            return (
+              <button
+                key={step.key}
+                type="button"
+                onClick={() => scrollToSection(step.key)}
+                className="flex items-center gap-2 flex-1 group"
+                aria-label={`Jump to ${step.label}`}
+                aria-current={isActive ? 'step' : undefined}
+              >
+                <span className={`h-2 rounded-full flex-1 transition-colors ${isFilled ? 'bg-accent' : 'bg-gray-200 dark:bg-surface-border'}`} />
+                <span className="relative w-6 text-right shrink-0">
+                  <span className={`text-xs font-medium ${isActive ? 'text-accent' : 'text-gray-400 dark:text-fg-muted group-hover:text-gray-600 dark:group-hover:text-fg'}`}>
+                    {i + 1}
+                  </span>
+                  {hasError && (
+                    <span
+                      className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 dark:bg-red-400"
+                      aria-label={`${step.label} has an error`}
+                    />
+                  )}
+                </span>
+                {i < effectiveSteps.length - 1 && (
+                  <ChevronRight size={14} className="text-gray-300 dark:text-surface-border shrink-0" />
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* NICU AABR notice */}
@@ -332,7 +427,12 @@ export default function RegisterChildPage() {
         {/* Form */}
         <form onSubmit={onSubmit} noValidate className="space-y-6">
           {/* ── Step A: Baby Information ── */}
-          <section className="card-theme">
+          <section
+            id="section-baby"
+            ref={registerSectionRef('baby')}
+            data-step-key="baby"
+            className="card-theme scroll-mt-24"
+          >
             <h2 className="text-base font-display font-semibold text-gray-900 dark:text-fg mb-5 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-accent/10 flex items-center justify-center">
                 <span className="text-teal-700 dark:text-accent-light text-sm font-bold">A</span>
@@ -407,7 +507,7 @@ export default function RegisterChildPage() {
               />
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-fg">
-                  NICU Admitted <span className="text-red-500 ml-0.5">*</span>
+                  NICU Admitted <span className="text-red-500 dark:text-red-400 ml-0.5">*</span>
                 </label>
                 <Controller
                   control={control}
@@ -497,7 +597,12 @@ export default function RegisterChildPage() {
           </section>
 
           {/* ── Step B: Mother/Guardian ── */}
-          <section className="card-theme">
+          <section
+            id="section-mother"
+            ref={registerSectionRef('mother')}
+            data-step-key="mother"
+            className="card-theme scroll-mt-24"
+          >
             <h2 className="text-base font-display font-semibold text-gray-900 dark:text-fg mb-5 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-accent/10 flex items-center justify-center">
                 <span className="text-teal-700 dark:text-accent-light text-sm font-bold">B</span>
@@ -519,7 +624,12 @@ export default function RegisterChildPage() {
           </section>
 
           {/* ── Step C: Consent ── */}
-          <section className="card-theme">
+          <section
+            id="section-consent"
+            ref={registerSectionRef('consent')}
+            data-step-key="consent"
+            className="card-theme scroll-mt-24"
+          >
             <h2 className="text-base font-display font-semibold text-gray-900 dark:text-fg mb-5 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-accent/10 flex items-center justify-center">
                 <span className="text-teal-700 dark:text-accent-light text-sm font-bold">C</span>
@@ -531,7 +641,7 @@ export default function RegisterChildPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-fg mb-2">
-                    Consent Status <span className="text-red-500 ml-0.5">*</span>
+                    Consent Status <span className="text-red-500 dark:text-red-400 ml-0.5">*</span>
                   </label>
                   <div className="space-y-2">
                     {(['GIVEN', 'REFUSED', 'PENDING'] as const).map((status) => (
@@ -575,7 +685,12 @@ export default function RegisterChildPage() {
           </section>
 
           {/* ── Step D: Risk Factors ── */}
-          <section className="card-theme">
+          <section
+            id="section-risk"
+            ref={registerSectionRef('risk')}
+            data-step-key="risk"
+            className="card-theme scroll-mt-24"
+          >
             <h2 className="text-base font-display font-semibold text-gray-900 dark:text-fg mb-2 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center">
                 <span className="text-amber-700 dark:text-amber-400 text-sm font-bold">D</span>
@@ -610,14 +725,22 @@ export default function RegisterChildPage() {
                 id="risk_additional_notes"
                 placeholder="Optional — free text, NOT used as a coded research variable"
                 rows={3}
-                className="input-field"
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm border bg-white dark:bg-surface-card
+                  text-gray-900 dark:text-fg placeholder-gray-400 dark:placeholder-fg-muted
+                  border-gray-300 dark:border-surface-border
+                  focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
                 {...register('risk_additional_notes')}
               />
             </div>
           </section>
 
           {/* ── Step E: Survey ── */}
-          <section className="card-theme">
+          <section
+            id="section-survey"
+            ref={registerSectionRef('survey')}
+            data-step-key="survey"
+            className="card-theme scroll-mt-24"
+          >
             <h2 className="text-base font-display font-semibold text-gray-900 dark:text-fg mb-2 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-accent/10 flex items-center justify-center">
                 <span className="text-teal-700 dark:text-accent-light text-sm font-bold">E</span>
@@ -725,7 +848,10 @@ export default function RegisterChildPage() {
                       id="survey_open_comments"
                       placeholder="Optional open comments from parent"
                       rows={3}
-                      className="input-field"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-sm border bg-white dark:bg-surface-card
+                        text-gray-900 dark:text-fg placeholder-gray-400 dark:placeholder-fg-muted
+                        border-gray-300 dark:border-surface-border
+                        focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
                       {...register('survey_open_comments')}
                     />
                   </div>
@@ -747,31 +873,29 @@ export default function RegisterChildPage() {
           </section>
 
           {/* Navigation */}
-          <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-surface-border">
-            <button
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-gray-200 dark:border-surface-border">
+            <Button
               type="button"
+              variant="ghost"
               onClick={goBack}
               disabled={effectiveCurrentStep === 0}
-              className="btn btn-ghost disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronLeft size={16} />
               Back
-            </button>
-            <div className="flex items-center gap-2">
+            </Button>
+            <div className="flex flex-wrap items-center gap-2">
               {effectiveCurrentStep < effectiveSteps.length - 1 && (
-                <button type="button" onClick={advanceStep} className="btn btn-ghost">
+                <Button type="button" variant="ghost" onClick={advanceStep}>
                   Next Step
                   <ChevronRight size={16} />
-                </button>
+                </Button>
               )}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="btn btn-primary"
-              >
+              {/* The one true submit for this form — every other button here is
+                  type="button" so nothing else can accidentally persist data. */}
+              <Button type="submit" variant="primary" loading={submitting}>
                 <Send size={16} />
                 {submitting ? 'Submitting...' : 'Register Child'}
-              </button>
+              </Button>
             </div>
           </div>
         </form>

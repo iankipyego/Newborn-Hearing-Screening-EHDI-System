@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { EarStateCard } from "@/components/children/EarStateCard";
+import { PatientIdentityBar } from "@/components/children/PatientIdentityBar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getPatientStatusLabel, type EarStateValue } from "@/lib/pathway";
 
@@ -189,23 +190,23 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 function formatResultBadge(result: string): string {
-  if (result === "PASS") return "bg-green-100 text-green-700";
-  if (result === "NOT_PASS") return "bg-red-100 text-red-700";
-  return "bg-gray-100 text-gray-600";
+  if (result === "PASS") return "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400";
+  if (result === "NOT_PASS") return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400";
+  return "bg-gray-100 dark:bg-surface-hover text-gray-600 dark:text-fg-muted";
 }
 
 function formatReferralBadge(status: string): string {
   if (status === "CLEARED" || status === "TREATED")
-    return "bg-green-100 text-green-700";
-  if (status === "PENDING") return "bg-amber-100 text-amber-700";
-  if (status === "NO_SHOW") return "bg-red-100 text-red-700";
-  return "bg-gray-100 text-gray-600";
+    return "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400";
+  if (status === "PENDING") return "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400";
+  if (status === "NO_SHOW") return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400";
+  return "bg-gray-100 dark:bg-surface-hover text-gray-600 dark:text-fg-muted";
 }
 
 function formatDeliveryStatus(status: string): string {
-  if (status === "DELIVERED") return "bg-green-50 text-green-700";
-  if (status === "FAILED") return "bg-red-50 text-red-700";
-  return "bg-gray-50 text-gray-600";
+  if (status === "DELIVERED") return "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400";
+  if (status === "FAILED") return "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400";
+  return "bg-gray-50 dark:bg-surface-hover text-gray-600 dark:text-fg-muted";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -235,7 +236,7 @@ export default function ChildProfilePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
       </div>
     );
   }
@@ -244,11 +245,11 @@ export default function ChildProfilePage() {
   if (error || !patient) {
     return (
       <div className="max-w-2xl mx-auto py-8 px-4">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-700">{error ?? "Patient not found"}</p>
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg p-4">
+          <p className="text-red-700 dark:text-red-400">{error ?? "Patient not found"}</p>
           <button
             onClick={() => router.push("/children/search")}
-            className="mt-3 text-sm text-blue-600 hover:underline"
+            className="mt-3 text-sm text-accent hover:underline"
           >
             ← Back to search
           </button>
@@ -275,7 +276,7 @@ export default function ChildProfilePage() {
       {/* ── Back link ── */}
       <button
         onClick={() => router.push("/children/search")}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+        className="inline-flex items-center gap-1 text-sm text-gray-500 dark:text-fg-muted hover:text-gray-700 dark:hover:text-fg"
       >
         <svg
           className="h-4 w-4"
@@ -294,79 +295,51 @@ export default function ChildProfilePage() {
       </button>
 
       {/* ════════════════════════════════════════════════════════
-          HEADER — research ID, child name, status badge, actions
+          HEADER — SAFER identity block, status badge, actions
           ════════════════════════════════════════════════════════ */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
+      <div className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold text-gray-900">
-                {patient.research_id}
-              </h1>
-              <StatusBadge
-                label={getPatientStatusLabel(
-                  pathwayStatus as import("@/lib/pathway").PatientPathwayStatus
-                )}
-                patientStatus={pathwayStatus as import("@/lib/pathway").PatientPathwayStatus}
-                size="md"
-              />
-              {!consentGiven && (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                  CONSENT {patient.consent_record?.status ?? "PENDING"}
-                </span>
+          <PatientIdentityBar
+            patient={patient}
+            className="flex-1 !border-0 !p-0 !rounded-none !bg-transparent dark:!bg-transparent"
+          />
+          <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
+            <StatusBadge
+              label={getPatientStatusLabel(
+                pathwayStatus as import("@/lib/pathway").PatientPathwayStatus
               )}
-            </div>
-
-            {/* NEW: Child's name — primary identity line */}
-            <p className="text-lg font-semibold text-gray-900 mt-1">
-              {patient.child_name ?? (
-                <span className="text-sm font-normal italic text-amber-600">
-                  Name not yet provided
-                </span>
-              )}
-            </p>
-
-            {/* Mother — secondary line */}
-            <p className="text-sm text-gray-500">
-              Mother:{" "}
-              <span className="font-medium text-gray-700">
-                {patient.mother_name}
+              patientStatus={pathwayStatus as import("@/lib/pathway").PatientPathwayStatus}
+              size="md"
+            />
+            {!consentGiven && (
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                CONSENT {patient.consent_record?.status ?? "PENDING"}
               </span>
-            </p>
-          </div>
-          <div className="text-right text-sm text-gray-500">
-            <p>
-              Born{" "}
-              {new Date(patient.date_of_birth).toLocaleDateString("en-KE", {
-                dateStyle: "long",
-              })}
-            </p>
-            <p>
+            )}
+            <p className="text-xs text-gray-500 dark:text-fg-muted sm:text-right">
               {patient.sex} · {patient.birth_weight_grams}g ·{" "}
               {patient.gestational_age_weeks} wks GA
-              {patient.hospital_number &&
-                ` · Hosp #${patient.hospital_number}`}
             </p>
           </div>
         </div>
 
         {/* Key info row */}
-        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-gray-100 pt-4 text-xs text-gray-500">
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-gray-100 dark:border-surface-border pt-4 text-xs text-gray-500 dark:text-fg-muted">
           <span>
             Delivery:{" "}
-            <span className="text-gray-700">
+            <span className="text-gray-700 dark:text-fg">
               {patient.delivery_type.replace(/_/g, " ")}
             </span>
           </span>
           <span>
             Apgar 5min:{" "}
-            <span className="text-gray-700">
+            <span className="text-gray-700 dark:text-fg">
               {patient.apgar_score_5min ?? "—"}
             </span>
           </span>
           <span>
             NICU:{" "}
-            <span className="text-gray-700">
+            <span className="text-gray-700 dark:text-fg">
               {patient.nicu_admitted
                 ? `Yes (${patient.nicu_days ?? "?"} days)`
                 : "No"}
@@ -376,7 +349,7 @@ export default function ChildProfilePage() {
           {/* NEW: Screened at birth */}
           <span>
             Screened at birth:{" "}
-            <span className="text-gray-700">
+            <span className="text-gray-700 dark:text-fg">
               {patient.screened_at_birth === true
                 ? "Yes"
                 : patient.screened_at_birth === false
@@ -387,16 +360,16 @@ export default function ChildProfilePage() {
 
           <span>
             Entry:{" "}
-            <span className="text-gray-700">{patient.entry_source}</span>
+            <span className="text-gray-700 dark:text-fg">{patient.entry_source}</span>
           </span>
           {patient.pathway_milestone?.days_birth_to_first_screen != null && (
   <span>
     Days to 1st screen:{" "}
-    <span className="text-gray-700">
+    <span className="text-gray-700 dark:text-fg">
       {patient.pathway_milestone?.days_birth_to_first_screen}
     </span>
     {patient.pathway_milestone?.screened_within_1_month === false && (
-                <span className="ml-1 text-amber-600">
+                <span className="ml-1 text-amber-600 dark:text-amber-400">
                   (outside 1-month target)
                 </span>
               )}
@@ -408,13 +381,13 @@ export default function ChildProfilePage() {
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href={`/children/${id}/screenings/new`}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent-light transition-colors"
           >
             + Add Screening Result
           </Link>
           <Link
             href={`/children/${id}/referrals/new`}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-fg bg-white dark:bg-surface-card border border-gray-300 dark:border-surface-border rounded-lg hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors"
           >
             + Add Referral
           </Link>
@@ -448,11 +421,11 @@ export default function ChildProfilePage() {
       {/* ════════════════════════════════════════════════════════
           DEMOGRAPHICS
           ════════════════════════════════════════════════════════ */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="text-base font-semibold text-gray-800 mb-4">
+      <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-fg mb-4">
           Demographics
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-6 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-3 gap-x-6 text-sm">
           {(
             [
               ["Child's name", patient.child_name ?? "Not yet provided"],       // NEW
@@ -481,47 +454,47 @@ export default function ChildProfilePage() {
             ] as const
           ).map(([label, value]) => (
             <div key={label}>
-              <span className="text-gray-500 text-xs">{label}</span>
-              <p className={`font-medium ${label === "Child's name" && !patient.child_name ? "italic text-amber-600" : "text-gray-900"}`}>
+              <span className="text-gray-500 dark:text-fg-muted text-xs">{label}</span>
+              <p className={`font-medium ${label === "Child's name" && !patient.child_name ? "italic text-amber-600 dark:text-amber-400" : "text-gray-900 dark:text-fg"}`}>
                 {String(value)}
               </p>
             </div>
           ))}
         </div>
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <span className="text-xs text-gray-500">Mother Name</span>
-          <p className="font-medium text-gray-900">{patient.mother_name}</p>
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-surface-border">
+          <span className="text-xs text-gray-500 dark:text-fg-muted">Mother Name</span>
+          <p className="font-medium text-gray-900 dark:text-fg">{patient.mother_name}</p>
         </div>
       </section>
 
       {/* ════════════════════════════════════════════════════════
           CONSENT
           ════════════════════════════════════════════════════════ */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="text-base font-semibold text-gray-800 mb-3">Consent</h2>
+      <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-fg mb-3">Consent</h2>
         {patient.consent_record ? (
           <div className="flex flex-wrap gap-6 text-sm">
             <div>
-              <span className="text-xs text-gray-500">Status</span>
+              <span className="text-xs text-gray-500 dark:text-fg-muted">Status</span>
               <p
                 className={`font-semibold ${
                   patient.consent_record.status === "GIVEN"
-                    ? "text-green-700"
-                    : "text-red-700"
+                    ? "text-green-700 dark:text-green-400"
+                    : "text-red-700 dark:text-red-400"
                 }`}
               >
                 {patient.consent_record.status}
               </p>
             </div>
             <div>
-              <span className="text-xs text-gray-500">Form version</span>
-              <p className="font-medium">
+              <span className="text-xs text-gray-500 dark:text-fg-muted">Form version</span>
+              <p className="font-medium text-gray-900 dark:text-fg">
                 {patient.consent_record.consent_form_version}
               </p>
             </div>
             <div>
-              <span className="text-xs text-gray-500">Recorded at</span>
-              <p className="font-medium">
+              <span className="text-xs text-gray-500 dark:text-fg-muted">Recorded at</span>
+              <p className="font-medium text-gray-900 dark:text-fg">
                 {new Date(
                   patient.consent_record.consented_at
                 ).toLocaleString()}
@@ -529,11 +502,11 @@ export default function ChildProfilePage() {
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between">
-            <p className="text-amber-600 text-sm">No consent record found</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-amber-600 dark:text-amber-400 text-sm">No consent record found</p>
             <Link
               href={`/children/${id}/consent`}
-              className="text-sm text-blue-600 hover:underline"
+              className="text-sm text-accent dark:text-accent-light hover:underline"
             >
               Record consent →
             </Link>
@@ -544,16 +517,18 @@ export default function ChildProfilePage() {
       {/* ════════════════════════════════════════════════════════
           RISK FACTORS
           ════════════════════════════════════════════════════════ */}
-      {patient.risk_factors && (
-        <section className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-base font-semibold text-gray-800 mb-3">
-            Risk Factors
-            <span className="ml-2 text-xs font-normal text-gray-500">
+      <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-fg mb-3">
+          Risk Factors
+          {patient.risk_factors && (
+            <span className="ml-2 text-xs font-normal text-gray-500 dark:text-fg-muted">
               (
               {(patient.risk_factors.risk_factor_count as number) ?? 0}{" "}
               present)
             </span>
-          </h2>
+          )}
+        </h2>
+        {patient.risk_factors ? (
           <div className="flex flex-wrap gap-2">
             {Object.entries(patient.risk_factors)
               .filter(
@@ -562,7 +537,7 @@ export default function ChildProfilePage() {
               .map(([key]) => (
                 <span
                   key={key}
-                  className="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded-full"
+                  className="px-2 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 rounded-full"
                 >
                   {key
                     .replace(/^risk_/, "")
@@ -572,13 +547,23 @@ export default function ChildProfilePage() {
             {Object.values(patient.risk_factors).filter(
               (v) => typeof v === "boolean" && v
             ).length === 0 && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-fg-muted">
                 No risk factors recorded
               </p>
             )}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-amber-600 dark:text-amber-400 text-sm">No risk factor record found</p>
+            <Link
+              href={`/children/${id}/risk-factors`}
+              className="text-sm text-accent dark:text-accent-light hover:underline"
+            >
+              Record risk factors →
+            </Link>
+          </div>
+        )}
+      </section>
 
       {/* ════════════════════════════════════════════════════════
           VISUAL INSPECTIONS (§2.1) — pre-OAE case history, per ear.
@@ -586,37 +571,37 @@ export default function ChildProfilePage() {
           record so the outcome (incl. REFER_MEDICAL) is visible here.
           ════════════════════════════════════════════════════════ */}
       {patient.visual_inspections && patient.visual_inspections.length > 0 && (
-        <section className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-base font-semibold text-gray-800 mb-4">
+        <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
+          <h2 className="text-base font-semibold text-gray-800 dark:text-fg mb-4">
             Visual Inspections ({patient.visual_inspections.length})
           </h2>
           <div className="space-y-2">
             {patient.visual_inspections.map((vi) => (
               <div
                 key={vi.id}
-                className="flex items-center justify-between border border-gray-100 rounded-lg p-3 text-sm"
+                className="flex items-center justify-between border border-gray-100 dark:border-surface-border rounded-lg p-3 text-sm"
               >
                 <div>
-                  <p className="font-medium">
+                  <p className="font-medium text-gray-900 dark:text-fg">
                     {vi.ear} ear —{" "}
                     {vi.outcome === "REFER_MEDICAL"
                       ? "Referred to medical follow-up"
                       : vi.outcome.replace(/_/g, " ")}
                   </p>
                   {vi.finding_note && (
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-xs text-gray-500 dark:text-fg-muted mt-0.5">
                       {vi.finding_note}
                     </p>
                   )}
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-gray-400 dark:text-fg-muted mt-0.5">
                     {new Date(vi.inspected_at).toLocaleDateString()}
                   </p>
                 </div>
                 <span
                   className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                     vi.outcome === "REFER_MEDICAL"
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-green-100 text-green-700"
+                      ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                      : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
                   }`}
                 >
                   {vi.outcome === "REFER_MEDICAL" ? "REFERRED" : "CLEARED"}
@@ -630,11 +615,11 @@ export default function ChildProfilePage() {
       {/* ════════════════════════════════════════════════════════
           SCREENING HISTORY (collapsible timeline)
           ════════════════════════════════════════════════════════ */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5">
+      <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={() => setShowTimeline(!showTimeline)}
-            className="flex items-center gap-2 text-base font-semibold text-gray-800 hover:text-gray-900"
+            className="flex items-center gap-2 text-base font-semibold text-gray-800 dark:text-fg hover:text-gray-900 dark:hover:text-fg"
           >
             <svg
               className={`h-4 w-4 transition-transform ${
@@ -656,7 +641,7 @@ export default function ChildProfilePage() {
           </button>
           <Link
             href={`/children/${id}/screenings/new`}
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-accent dark:text-accent-light hover:underline"
           >
             + Add result
           </Link>
@@ -666,7 +651,7 @@ export default function ChildProfilePage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-xs text-gray-500 border-b">
+                <tr className="text-xs text-gray-500 dark:text-fg-muted border-b border-gray-200 dark:border-surface-border">
                   <th className="text-left pb-2 pr-4">Date</th>
                   <th className="text-left pb-2 pr-4">Ear</th>
                   <th className="text-left pb-2 pr-4">Stage</th>
@@ -674,17 +659,17 @@ export default function ChildProfilePage() {
                   <th className="text-left pb-2">Result</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-surface-border">
                 {patient.screening_events.map((se) => (
                   <tr key={se.id}>
-                    <td className="py-2 pr-4 text-gray-600">
+                    <td className="py-2 pr-4 text-gray-600 dark:text-fg-muted">
                       {new Date(se.tested_at).toLocaleDateString()}
                     </td>
-                    <td className="py-2 pr-4 font-medium">{se.ear}</td>
-                    <td className="py-2 pr-4 text-gray-600">
+                    <td className="py-2 pr-4 font-medium text-gray-900 dark:text-fg">{se.ear}</td>
+                    <td className="py-2 pr-4 text-gray-600 dark:text-fg-muted">
                       {STAGE_LABELS[se.stage] ?? se.stage.replace(/_/g, " ")}
                     </td>
-                    <td className="py-2 pr-4">{se.modality}</td>
+                    <td className="py-2 pr-4 text-gray-900 dark:text-fg">{se.modality}</td>
                     <td className="py-2">
                       <span
                         className={`px-2 py-0.5 rounded-full text-xs font-semibold ${formatResultBadge(se.result)}`}
@@ -702,7 +687,7 @@ export default function ChildProfilePage() {
         {showTimeline && (
           <div className="space-y-3">
             {patient.screening_events.length === 0 && (
-              <p className="rounded-lg border border-dashed border-gray-300 py-6 text-center text-sm text-gray-400">
+              <p className="rounded-lg border border-dashed border-gray-300 dark:border-surface-border py-6 text-center text-sm text-gray-400 dark:text-fg-muted">
                 No screening events recorded yet
               </p>
             )}
@@ -710,24 +695,24 @@ export default function ChildProfilePage() {
             {patient.screening_events.map((event) => (
               <div
                 key={event.id}
-                className="rounded-lg border border-gray-200 bg-white p-4"
+                className="rounded-lg border border-gray-200 dark:border-surface-border bg-white dark:bg-surface-card p-4"
               >
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-gray-400 uppercase">
+                      <span className="text-xs font-medium text-gray-400 dark:text-fg-muted uppercase">
                         {event.ear}
                       </span>
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-sm font-medium text-gray-900 dark:text-fg">
                         {STAGE_LABELS[event.stage] ??
                           event.stage.replace(/_/g, " ")}
                       </span>
-                      <span className="text-xs text-gray-400">·</span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-gray-400 dark:text-fg-muted">·</span>
+                      <span className="text-xs text-gray-500 dark:text-fg-muted">
                         {event.modality}
                       </span>
                     </div>
-                    <p className="mt-0.5 text-xs text-gray-400">
+                    <p className="mt-0.5 text-xs text-gray-400 dark:text-fg-muted">
                       {new Date(event.tested_at).toLocaleString("en-GB", {
                         day: "numeric",
                         month: "short",
@@ -749,12 +734,12 @@ export default function ChildProfilePage() {
                   </span>
                 </div>
                 {event.clinical_comment && (
-                  <p className="mt-2 text-xs italic text-gray-500">
+                  <p className="mt-2 text-xs italic text-gray-500 dark:text-fg-muted">
                     &quot;{event.clinical_comment}&quot;
                   </p>
                 )}
                 {event.incomplete_reason && (
-                  <p className="mt-1 text-xs text-amber-600">
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
                     Reason: {event.incomplete_reason}
                   </p>
                 )}
@@ -763,17 +748,17 @@ export default function ChildProfilePage() {
 
             {/* Referrals nested under timeline */}
             {patient.referrals.length > 0 && (
-              <div className="mt-4 border-t border-gray-100 pt-4">
-                <p className="mb-2 text-xs font-medium uppercase text-gray-400">
+              <div className="mt-4 border-t border-gray-100 dark:border-surface-border pt-4">
+                <p className="mb-2 text-xs font-medium uppercase text-gray-400 dark:text-fg-muted">
                   Referrals
                 </p>
                 {patient.referrals.map((r) => (
                   <div
                     key={r.id}
-                    className="mb-2 rounded-lg border border-purple-100 bg-purple-50/30 p-3 text-sm"
+                    className="mb-2 rounded-lg border border-purple-100 dark:border-purple-800/40 bg-purple-50/30 dark:bg-purple-900/10 p-3 text-sm"
                   >
                     <div className="flex items-center justify-between">
-                      <span>
+                      <span className="text-gray-900 dark:text-fg">
                         {r.ear} —{" "}
                         {r.type === "HEALTH_CARE_PROVIDER"
                           ? "HCP"
@@ -786,7 +771,7 @@ export default function ChildProfilePage() {
                         {r.status}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-gray-500 dark:text-fg-muted">
                       Referred:{" "}
                       {new Date(r.referred_at).toLocaleDateString("en-GB")}
                       {r.provider_name && ` — ${r.provider_name}`}
@@ -804,25 +789,25 @@ export default function ChildProfilePage() {
           DIAGNOSTIC EVALUATIONS
           ════════════════════════════════════════════════════════ */}
       {patient.diagnostic_evaluations.length > 0 && (
-        <section className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-base font-semibold text-gray-800 mb-4">
+        <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
+          <h2 className="text-base font-semibold text-gray-800 dark:text-fg mb-4">
             Diagnostic Evaluations
           </h2>
           <div className="space-y-3">
             {patient.diagnostic_evaluations.map((de) => (
               <div
                 key={de.id}
-                className="border border-gray-100 rounded-lg p-3"
+                className="border border-gray-100 dark:border-surface-border rounded-lg p-3"
               >
-                <p className="text-sm font-medium">
+                <p className="text-sm font-medium text-gray-900 dark:text-fg">
                   {de.ear} ear — {de.diagnosis.replace(/_/g, " ")}
                 </p>
                 {de.degree && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-fg-muted">
                     Degree: {de.degree}
                   </p>
                 )}
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-fg-muted">
                   {de.audiologist_name} ·{" "}
                   {new Date(de.evaluated_at).toLocaleDateString()}
                 </p>
@@ -835,30 +820,30 @@ export default function ChildProfilePage() {
       {/* ════════════════════════════════════════════════════════
           REFERRALS (standalone section — always visible)
           ════════════════════════════════════════════════════════ */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5">
+      <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-800">Referrals</h2>
+          <h2 className="text-base font-semibold text-gray-800 dark:text-fg">Referrals</h2>
           <Link
             href={`/children/${id}/referrals/new`}
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-accent dark:text-accent-light hover:underline"
           >
             + Add referral
           </Link>
         </div>
         {patient.referrals.length === 0 ? (
-          <p className="text-sm text-gray-500">No referrals recorded</p>
+          <p className="text-sm text-gray-500 dark:text-fg-muted">No referrals recorded</p>
         ) : (
           <div className="space-y-3">
             {patient.referrals.map((r) => (
               <div
                 key={r.id}
-                className="flex items-center justify-between border border-gray-100 rounded-lg p-3"
+                className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border border-gray-100 dark:border-surface-border rounded-lg p-3"
               >
                 <div>
-                  <p className="text-sm font-medium">
+                  <p className="text-sm font-medium text-gray-900 dark:text-fg">
                     {r.ear} ear — {r.type.replace(/_/g, " ")}
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-fg-muted">
                     {r.facility} · {new Date(r.referred_at).toLocaleDateString()}
                     {r.resolved_at &&
                       ` · Resolved ${new Date(r.resolved_at).toLocaleDateString()}`}
@@ -868,7 +853,7 @@ export default function ChildProfilePage() {
                   {r.status === "PENDING" && (
                     <Link
                       href={`/referrals/${r.id}/edit`}
-                      className="text-xs font-medium text-blue-600 hover:underline"
+                      className="text-xs font-medium text-accent dark:text-accent-light hover:underline"
                     >
                       Resolve
                     </Link>
@@ -888,31 +873,31 @@ export default function ChildProfilePage() {
       {/* ════════════════════════════════════════════════════════
           NOTIFICATIONS LOG
           ════════════════════════════════════════════════════════ */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="text-base font-semibold text-gray-800 mb-3">
+      <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-fg mb-3">
           Notifications (last 50)
         </h2>
         {patient.notifications_log.length === 0 ? (
-          <p className="text-sm text-gray-500">No notifications sent yet</p>
+          <p className="text-sm text-gray-500 dark:text-fg-muted">No notifications sent yet</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-gray-400 border-b">
+                <tr className="text-gray-400 dark:text-fg-muted border-b border-gray-200 dark:border-surface-border">
                   <th className="text-left pb-2 pr-3">Date</th>
                   <th className="text-left pb-2 pr-3">Channel</th>
                   <th className="text-left pb-2 pr-3">Trigger</th>
                   <th className="text-left pb-2">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-50 dark:divide-surface-border">
                 {patient.notifications_log.map((n) => (
                   <tr key={n.id}>
-                    <td className="py-1.5 pr-3 text-gray-500">
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-fg-muted">
                       {new Date(n.sent_at).toLocaleDateString()}
                     </td>
-                    <td className="py-1.5 pr-3">{n.channel}</td>
-                    <td className="py-1.5 pr-3 text-gray-500">
+                    <td className="py-1.5 pr-3 text-gray-900 dark:text-fg">{n.channel}</td>
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-fg-muted">
                       {n.trigger_reason.replace(/_/g, " ")}
                     </td>
                     <td className="py-1.5">
@@ -933,36 +918,36 @@ export default function ChildProfilePage() {
       {/* ════════════════════════════════════════════════════════
           PARENT SURVEY
           ════════════════════════════════════════════════════════ */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="text-base font-semibold text-gray-800 mb-3">
+      <section className="bg-white dark:bg-surface-card border border-gray-200 dark:border-surface-border rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-fg mb-3">
           Parent Survey
         </h2>
         {patient.parent_survey ? (
           <div className="flex flex-wrap gap-6 text-sm">
             <div>
-              <span className="text-xs text-gray-500">Status</span>
+              <span className="text-xs text-gray-500 dark:text-fg-muted">Status</span>
               <p
                 className={`font-semibold ${
                   patient.parent_survey.status === "COMPLETED"
-                    ? "text-green-700"
+                    ? "text-green-700 dark:text-green-400"
                     : patient.parent_survey.status === "NO_RESPONSE"
-                      ? "text-red-700"
-                      : "text-amber-700"
+                      ? "text-red-700 dark:text-red-400"
+                      : "text-amber-700 dark:text-amber-400"
                 }`}
               >
                 {patient.parent_survey.status}
               </p>
             </div>
             <div>
-              <span className="text-xs text-gray-500">Channel</span>
-              <p className="font-medium">
+              <span className="text-xs text-gray-500 dark:text-fg-muted">Channel</span>
+              <p className="font-medium text-gray-900 dark:text-fg">
                 {patient.parent_survey.delivery_channel_preference}
               </p>
             </div>
             {patient.parent_survey.satisfaction_score && (
               <div>
-                <span className="text-xs text-gray-500">Satisfaction</span>
-                <p className="font-medium">
+                <span className="text-xs text-gray-500 dark:text-fg-muted">Satisfaction</span>
+                <p className="font-medium text-gray-900 dark:text-fg">
                   {patient.parent_survey.satisfaction_score}/5
                 </p>
               </div>
@@ -971,7 +956,7 @@ export default function ChildProfilePage() {
         ) : (
           <Link
             href={`/children/${id}/survey`}
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-accent dark:text-accent-light hover:underline"
           >
             Record survey →
           </Link>

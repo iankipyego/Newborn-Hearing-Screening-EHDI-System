@@ -5,7 +5,10 @@ import {
 } from 'recharts';
 import type { FunnelStage } from '@/lib/dashboard/queries';
 
-const COLORS = ['#0d9488', '#14b8a6', '#f59e0b', '#f97316', '#ef4444', '#dc2626'];
+const COLORS = [
+  'var(--color-accent)', 'var(--color-accent-light)', 'var(--color-warn)',
+  'var(--color-orange-500)', 'var(--color-red-500)', 'var(--color-red-600)',
+];
 
 function Tip({ active, payload }: { active?: boolean; payload?: Array<{ payload: FunnelStage }> }) {
   if (!active || !payload?.length) return null;

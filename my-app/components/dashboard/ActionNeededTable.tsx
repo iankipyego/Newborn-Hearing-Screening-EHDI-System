@@ -1,5 +1,7 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import type { ActionNeededItem } from '@/lib/dashboard/queries';
 
 const STYLES: Record<string, string> = {
@@ -11,6 +13,9 @@ const STYLES: Record<string, string> = {
 };
 
 export default function ActionNeededTable({ items }: { items: ActionNeededItem[] }) {
+  const router = useRouter();
+  const goToPatient = (patientId: string) => router.push(`/children/${patientId}`);
+
   if (items.length === 0) return (
     <div className="rounded-xl border border-gray-200 dark:border-surface-border bg-white dark:bg-surface-card p-5">
       <h3 className="text-sm font-semibold text-gray-800 dark:text-fg mb-0.5">Action Needed</h3>
@@ -34,7 +39,30 @@ export default function ActionNeededTable({ items }: { items: ActionNeededItem[]
         </span>
       </div>
 
-      <div className="overflow-x-auto -mx-5 px-5">
+      {/* Phone: stacked cards — a table here would force horizontal scroll */}
+      <div className="md:hidden space-y-2">
+        {items.map((item) => (
+          <Link key={`${item.patient_id}-${item.issue}`}
+             href={`/children/${item.patient_id}`}
+             className="block rounded-lg border border-gray-100 dark:border-surface-border/50 p-3
+                        hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors
+                        focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="text-xs font-mono font-semibold text-teal-700 dark:text-accent-light">{item.research_id}</span>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${STYLES[item.pathway_status] ?? STYLES.IN_PROGRESS}`}>
+                {item.pathway_status.replace(/_/g, ' ')}
+              </span>
+            </div>
+            <p className="text-xs text-gray-700 dark:text-fg mb-1.5">{item.issue}</p>
+            {item.days_overdue > 0
+              ? <span className={`text-xs font-bold ${item.days_overdue > 30 ? 'text-red-600 dark:text-red-400' : item.days_overdue > 14 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-fg-muted'}`}>{item.days_overdue}d overdue</span>
+              : <span className="text-xs text-gray-400 dark:text-fg-muted">Not overdue</span>}
+          </Link>
+        ))}
+      </div>
+
+      {/* Desktop/tablet: table */}
+      <div className="hidden md:block overflow-x-auto -mx-5 px-5">
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-gray-100 dark:border-surface-border">
@@ -47,8 +75,15 @@ export default function ActionNeededTable({ items }: { items: ActionNeededItem[]
           <tbody>
             {items.map((item) => (
               <tr key={`${item.patient_id}-${item.issue}`}
-                  className="border-b border-gray-50 dark:border-surface-border/50 last:border-0 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
-                  onClick={() => (window.location.href = `/children/${item.patient_id}`)}>
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`View record for ${item.research_id}`}
+                  className="border-b border-gray-50 dark:border-surface-border/50 last:border-0 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer
+                             focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+                  onClick={() => goToPatient(item.patient_id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPatient(item.patient_id); }
+                  }}>
                 <td className="py-2.5 pr-4">
                   <span className="text-xs font-mono font-semibold text-teal-700 dark:text-accent-light">{item.research_id}</span>
                 </td>

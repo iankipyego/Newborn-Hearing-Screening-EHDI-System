@@ -53,9 +53,9 @@ export default function TrendChart({ data }: { data: TrendPoint[] }) {
           <Tooltip content={<Tip />} />
           <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }}
             formatter={(v: string) => ({ coverage_rate: 'Coverage', referral_rate: 'Referral rate', loss_to_followup_rate: 'LTFU rate' }[v] ?? v)} />
-          <Line type="monotone" dataKey="coverage_rate" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-          <Line type="monotone" dataKey="referral_rate" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-          <Line type="monotone" dataKey="loss_to_followup_rate" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+          <Line type="monotone" dataKey="coverage_rate" stroke="var(--color-accent)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+          <Line type="monotone" dataKey="referral_rate" stroke="var(--color-warn)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+          <Line type="monotone" dataKey="loss_to_followup_rate" stroke="var(--color-red-500)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
